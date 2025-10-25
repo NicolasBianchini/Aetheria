@@ -6,17 +6,25 @@ import {
     Animated,
     Dimensions,
     TouchableOpacity,
+    SafeAreaView,
+    ScrollView,
 } from 'react-native';
+import { ArrowLeft, Mic, MicOff, RotateCcw } from 'lucide-react-native';
 import { Audio } from 'expo-av';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 
 const { width, height } = Dimensions.get('window');
 
-export default function BoatGame() {
+export default function BoatGame({ navigation }) {
     const [isRecording, setIsRecording] = useState(false);
     const [recording, setRecording] = useState(null);
     const [soundLevel, setSoundLevel] = useState(0);
     const [boatPosition, setBoatPosition] = useState(0);
     const [gameStarted, setGameStarted] = useState(false);
+    const [score, setScore] = useState(0);
+    const [gameComplete, setGameComplete] = useState(false);
     const boatAnimation = useRef(new Animated.Value(0)).current;
     const recordingRef = useRef(null);
 
@@ -73,6 +81,11 @@ export default function BoatGame() {
                         duration: 200,
                         useNativeDriver: true,
                     }).start();
+
+                    if (newPosition >= width - 100 && !gameComplete) {
+                        setGameComplete(true);
+                        setScore(prev => prev + 100);
+                    }
                 }
             }, 100);
 
@@ -98,102 +111,226 @@ export default function BoatGame() {
         setBoatPosition(0);
         setSoundLevel(0);
         setGameStarted(false);
+        setGameComplete(false);
         boatAnimation.setValue(0);
     };
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>🚤 Jogo do Barquinho</Text>
-            <Text style={styles.instruction}>
-                {!gameStarted
-                    ? 'Toque para começar e assopre no microfone para fazer o barco navegar!'
-                    : 'Assopre forte para fazer o barco navegar mais rápido!'
-                }
-            </Text>
-
-            <View style={styles.gameArea}>
-                {/* Água */}
-                <View style={styles.water} />
-
-                {/* Barco */}
-                <Animated.View
-                    style={[
-                        styles.boat,
-                        {
-                            transform: [{ translateX: boatAnimation }],
-                        },
-                    ]}
+        <SafeAreaView style={styles.container}>
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={() => navigation.goBack()}
                 >
-                    <Text style={styles.boatEmoji}>🚤</Text>
-                </Animated.View>
+                    <ArrowLeft size={20} color="#666" />
+                </TouchableOpacity>
+                <View style={styles.headerContent}>
+                    <Text style={styles.headerTitle}>Barquinho</Text>
+                    <Text style={styles.headerScore}>Pontos: {score}</Text>
+                </View>
+                <TouchableOpacity
+                    style={styles.resetButton}
+                    onPress={resetGame}
+                >
+                    <RotateCcw size={20} color="#666" />
+                </TouchableOpacity>
+            </View>
 
-                {/* Indicador de nível de sopro */}
-                {gameStarted && (
-                    <View style={styles.soundIndicator}>
-                        <Text style={styles.soundText}>Força do sopro:</Text>
-                        <View style={styles.soundBar}>
-                            <View
-                                style={[
-                                    styles.soundLevel,
-                                    { width: `${soundLevel}%` }
-                                ]}
-                            />
-                        </View>
-                        <Text style={styles.soundValue}>{Math.round(soundLevel)}%</Text>
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {/* Instructions */}
+                <View style={styles.instructions}>
+                    <Text style={styles.title}>Faça o barco navegar!</Text>
+                    <Text style={styles.subtitle}>
+                        Assopre no microfone para mover o barco até o final
+                    </Text>
+                </View>
+
+                {/* Ocean Scene */}
+                <View style={styles.gameArea}>
+                    {/* Waves */}
+                    <View style={styles.waves}>
+                        <View style={styles.wave} />
+                    </View>
+
+                    {/* Boat */}
+                    <Animated.View
+                        style={[
+                            styles.boat,
+                            {
+                                transform: [{ translateX: boatAnimation }],
+                            },
+                        ]}
+                    >
+                        <Text style={styles.boatEmoji}>⛵</Text>
+                    </Animated.View>
+
+                    {/* Finish Line */}
+                    <View style={styles.finishLine}>
+                        <Text style={styles.finishFlag}>🏁</Text>
+                    </View>
+
+                    {/* Clouds */}
+                    <View style={styles.clouds}>
+                        <Text style={styles.cloud}>☁️</Text>
+                        <Text style={[styles.cloud, styles.cloud2]}>☁️</Text>
+                    </View>
+                </View>
+
+                {/* Progress Bar */}
+                <View style={styles.progressSection}>
+                    <View style={styles.progressHeader}>
+                        <Text style={styles.progressLabel}>Progresso</Text>
+                        <Text style={styles.progressValue}>{Math.round(boatPosition)}%</Text>
+                    </View>
+                    <View style={styles.progressBar}>
+                        <View style={[styles.progressFill, { width: `${boatPosition}%` }]} />
+                    </View>
+                </View>
+
+                {/* Breath Power Indicator */}
+                <View style={styles.breathSection}>
+                    <View style={styles.breathHeader}>
+                        <Text style={styles.breathLabel}>Força do Sopro</Text>
+                        <Text style={styles.breathValue}>{Math.round(soundLevel)}%</Text>
+                    </View>
+                    <View style={styles.breathBar}>
+                        <View style={[styles.breathFill, { width: `${soundLevel}%` }]} />
+                    </View>
+                </View>
+
+                {/* Controls */}
+                <View style={styles.controls}>
+                    {!isRecording ? (
+                        <TouchableOpacity
+                            style={styles.startButton}
+                            onPress={startGame}
+                        >
+                            <Mic size={20} color="#fff" />
+                            <Text style={styles.buttonText}>Começar a Soprar</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity
+                            style={styles.stopButton}
+                            onPress={stopRecording}
+                        >
+                            <MicOff size={20} color="#fff" />
+                            <Text style={styles.buttonText}>Parar</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+                {/* Game Complete Message */}
+                {gameComplete && (
+                    <View style={styles.successMessage}>
+                        <Text style={styles.successTitle}>Parabéns! Você completou o desafio!</Text>
+                        <Text style={styles.successSubtitle}>+100 pontos</Text>
                     </View>
                 )}
-            </View>
 
-            <View style={styles.controls}>
-                {!gameStarted ? (
-                    <TouchableOpacity style={styles.startButton} onPress={startGame}>
-                        <Text style={styles.buttonText}>Começar Jogo</Text>
-                    </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity style={styles.resetButton} onPress={resetGame}>
-                        <Text style={styles.buttonText}>Jogar Novamente</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
-        </View>
+                {/* Tips */}
+                <View style={styles.tipsCard}>
+                    <Text style={styles.tipsTitle}>Dicas:</Text>
+                    <View style={styles.tipsList}>
+                        <Text style={styles.tip}>• Respire fundo antes de soprar</Text>
+                        <Text style={styles.tip}>• Mantenha um sopro constante e controlado</Text>
+                        <Text style={styles.tip}>• Pratique respiração diafragmática para melhores resultados</Text>
+                    </View>
+                </View>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#87CEEB',
+        backgroundColor: '#F8FAFC',
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E2E8F0',
+    },
+    backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 20,
+        backgroundColor: '#F1F5F9',
     },
-    title: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#2C3E50',
-        marginBottom: 20,
-        textAlign: 'center',
+    headerContent: {
+        alignItems: 'center',
     },
-    instruction: {
-        fontSize: 16,
-        color: '#34495E',
-        textAlign: 'center',
-        marginBottom: 30,
+    headerTitle: {
+        fontSize: 20,
+        fontWeight: '300',
+        color: '#1E293B',
+        letterSpacing: -0.5,
+    },
+    headerScore: {
+        fontSize: 12,
+        color: '#64748B',
+    },
+    resetButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F1F5F9',
+    },
+    content: {
+        flex: 1,
         paddingHorizontal: 20,
     },
-    gameArea: {
-        width: width - 40,
-        height: 200,
-        position: 'relative',
-        marginBottom: 30,
+    instructions: {
+        alignItems: 'center',
+        marginTop: 24,
+        marginBottom: 24,
     },
-    water: {
+    title: {
+        fontSize: 24,
+        fontWeight: '300',
+        color: '#1E293B',
+        letterSpacing: -0.5,
+        marginBottom: 8,
+    },
+    subtitle: {
+        fontSize: 14,
+        color: '#64748B',
+        textAlign: 'center',
+    },
+    gameArea: {
+        height: 200,
+        backgroundColor: '#87CEEB',
+        borderRadius: 16,
+        marginBottom: 24,
+        position: 'relative',
+        overflow: 'hidden',
+    },
+    waves: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
         height: 60,
         backgroundColor: '#4682B4',
+        borderRadius: 10,
+    },
+    wave: {
+        position: 'absolute',
+        top: 20,
+        left: 0,
+        right: 0,
+        height: 20,
+        backgroundColor: '#5A9BD4',
         borderRadius: 10,
     },
     boat: {
@@ -208,54 +345,181 @@ const styles = StyleSheet.create({
     boatEmoji: {
         fontSize: 40,
     },
-    soundIndicator: {
+    finishLine: {
         position: 'absolute',
-        top: 20,
-        left: 0,
-        right: 0,
+        right: 16,
+        top: 0,
+        bottom: 0,
+        width: 4,
+        backgroundColor: '#F59E0B',
         alignItems: 'center',
+        justifyContent: 'center',
     },
-    soundText: {
-        fontSize: 16,
-        color: '#2C3E50',
-        marginBottom: 10,
-    },
-    soundBar: {
-        width: 200,
-        height: 20,
-        backgroundColor: '#E0E0E0',
-        borderRadius: 10,
-        overflow: 'hidden',
-        marginBottom: 5,
-    },
-    soundLevel: {
-        height: '100%',
-        backgroundColor: '#4CAF50',
-        borderRadius: 10,
-    },
-    soundValue: {
-        fontSize: 14,
-        color: '#2C3E50',
-        fontWeight: 'bold',
-    },
-    controls: {
+    finishFlag: {
+        fontSize: 24,
         marginTop: 20,
     },
-    startButton: {
-        backgroundColor: '#4CAF50',
-        paddingHorizontal: 30,
-        paddingVertical: 15,
-        borderRadius: 25,
+    clouds: {
+        position: 'absolute',
+        top: 16,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
     },
-    resetButton: {
-        backgroundColor: '#FF9800',
-        paddingHorizontal: 30,
-        paddingVertical: 15,
-        borderRadius: 25,
+    cloud: {
+        fontSize: 32,
+        opacity: 0.7,
+    },
+    cloud2: {
+        opacity: 0.5,
+    },
+    progressSection: {
+        marginBottom: 24,
+    },
+    progressHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    progressLabel: {
+        fontSize: 14,
+        color: '#64748B',
+    },
+    progressValue: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#1E293B',
+    },
+    progressBar: {
+        height: 12,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 6,
+        overflow: 'hidden',
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: '#3498DB',
+        borderRadius: 6,
+    },
+    breathSection: {
+        marginBottom: 24,
+    },
+    breathHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    breathLabel: {
+        fontSize: 14,
+        color: '#64748B',
+    },
+    breathValue: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#1E293B',
+    },
+    breathBar: {
+        height: 8,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+        overflow: 'hidden',
+    },
+    breathFill: {
+        height: '100%',
+        backgroundColor: '#10B981',
+        borderRadius: 4,
+    },
+    controls: {
+        marginBottom: 24,
+    },
+    startButton: {
+        height: 56,
+        backgroundColor: '#3498DB',
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        shadowColor: '#3498DB',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    stopButton: {
+        height: 56,
+        backgroundColor: '#EF4444',
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        shadowColor: '#EF4444',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
     },
     buttonText: {
-        color: 'white',
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '500',
+        color: '#fff',
+    },
+    successMessage: {
+        backgroundColor: '#D1FAE5',
+        borderWidth: 1,
+        borderColor: '#10B981',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    successTitle: {
+        fontSize: 18,
+        fontWeight: '500',
+        color: '#065F46',
+        marginBottom: 4,
+    },
+    successSubtitle: {
+        fontSize: 14,
+        color: '#047857',
+    },
+    tipsCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 32,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    tipsTitle: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#1E293B',
+        marginBottom: 12,
+    },
+    tipsList: {
+        gap: 8,
+    },
+    tip: {
+        fontSize: 14,
+        color: '#64748B',
+        lineHeight: 20,
     },
 });

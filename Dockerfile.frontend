@@ -1,0 +1,22 @@
+# Dockerfile para o frontend Expo
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Instalar Expo CLI globalmente
+RUN npm install -g @expo/cli
+
+# Copiar package.json e package-lock.json
+COPY package*.json ./
+
+# Instalar dependências
+RUN npm install --legacy-peer-deps
+
+# Copiar código do projeto
+COPY . .
+
+# Expor portas do Expo
+EXPOSE 19006 19001 19002
+
+# Comando para iniciar o Expo
+CMD ["npm", "start"]

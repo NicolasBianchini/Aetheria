@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Aetheria - Terapia Respiratória",
-    "slug": "aetheria-terapia-respiratoria",
+    "name": "Aetheria",
+    "slug": "aetheria-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#E8F4FD"
+      "backgroundColor": "#F8FAFC"
     },
     "ios": {
       "supportsTablet": true,
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#E8F4FD"
+        "backgroundColor": "#F8FAFC"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [

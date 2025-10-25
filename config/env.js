@@ -1,0 +1,13 @@
+# Firebase Configuration
+FIREBASE_API_KEY=AIzaSyAmIULnmG2QezI_JWQYUpxBD_9GzOd08ZI
+FIREBASE_AUTH_DOMAIN=aetheria-70828.firebaseapp.com
+FIREBASE_PROJECT_ID=aetheria-70828
+FIREBASE_STORAGE_BUCKET=aetheria-70828.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID=372690668887
+FIREBASE_APP_ID=1:372690668887:web:ea847f01ab661c7feb4212
+
+# API Configuration
+API_BASE_URL=http://localhost:5000
+
+# App Configuration
+USE_FIREBASE=true

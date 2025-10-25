@@ -1,8 +1,3 @@
-"""
-Implementação específica do jogo do barquinho
-Demonstra herança e polimorfismo em POO
-"""
-
 import numpy as np
 from typing import Dict, Any
 import sys
@@ -13,11 +8,7 @@ from models.base_game import BaseGame
 import logging
 
 class BoatGame(BaseGame):
-    """
-    Jogo do barquinho que navega baseado na intensidade do sopro.
-    Herda de BaseGame e implementa comportamentos específicos.
-    """
-    
+
     def __init__(self, game_id: str, player_name: str = "Jogador"):
         """
         Construtor específico do BoatGame
@@ -46,17 +37,7 @@ class BoatGame(BaseGame):
         self._logger = logging.getLogger("BoatGame")
     
     def _process_audio(self, audio_data: bytes, sample_rate: int = 44100) -> Dict[str, Any]:
-        """
-        Processa áudio específico para detectar sopros e mover o barco
-        
-        Args:
-            audio_data: Dados de áudio em bytes
-            sample_rate: Taxa de amostragem
-            
-        Returns:
-            Dict com dados processados do jogo do barco
-        """
-        # Converter bytes para array numpy
+
         audio_array = np.frombuffer(audio_data, dtype=np.int16)
         
         # Aplicar filtros de sopro

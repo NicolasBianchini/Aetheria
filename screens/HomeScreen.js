@@ -1,77 +1,230 @@
-import React from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
-    Dimensions,
     SafeAreaView,
+    ScrollView,
+    Alert,
+    Modal,
 } from 'react-native';
+import { Sailboat, PartyPopper, Menu, X, User, LogOut, Users, Wind } from 'lucide-react-native';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import { useState } from 'react';
 
-const { width } = Dimensions.get('window');
+export default function HomeScreen() {
+    const { logout } = useAuth();
+    const navigation = useNavigation();
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-export default function HomeScreen({ navigation }) {
+    const handleLogout = async () => {
+        Alert.alert(
+            'Logout',
+            'Tem certeza que deseja sair?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                { 
+                    text: 'Sair', 
+                    style: 'destructive',
+                    onPress: async () => {
+                        await logout();
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleMenuToggle = () => {
+        setIsMenuOpen(!isMenuOpen);
+    };
+
+    const handleMenuClose = () => {
+        setIsMenuOpen(false);
+    };
+
+    const handleProfile = () => {
+        setIsMenuOpen(false);
+        navigation.navigate('Profile');
+    };
+
+    const handlePatients = () => {
+        setIsMenuOpen(false);
+        Alert.alert('Área do Médico', 'Funcionalidade em desenvolvimento!');
+    };
+
+    const handleGamePress = (game) => {
+        if (game.id === 'barquinho') {
+            navigation.navigate('BoatGame');
+        } else {
+            Alert.alert(
+                game.title,
+                `${game.description}\n\nFuncionalidade em desenvolvimento!`,
+                [{ text: 'OK' }]
+            );
+        }
+    };
+
+    const games = [
+        {
+            id: "barquinho",
+            title: "Barquinho",
+            description: "Assopre no microfone para fazer o barco navegar pelo mar!",
+            icon: Sailboat,
+            color: "from-blue-500/20 to-cyan-500/20",
+            iconColor: "text-blue-600",
+        },
+        {
+            id: "balao",
+            title: "Balão do Palhaço",
+            description: "Encha o balão com seu sopro e faça o palhaço subir!",
+            icon: PartyPopper,
+            color: "from-red-500/20 to-pink-500/20",
+            iconColor: "text-red-600",
+        },
+    ];
+
     return (
         <SafeAreaView style={styles.container}>
+            {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.title}>🌬️ Aetheria</Text>
-                <Text style={styles.subtitle}>Terapia Respiratória Interativa</Text>
-                <Text style={styles.description}>
-                    Jogos divertidos para melhorar sua respiração!
-                </Text>
+                <View style={styles.headerContent}>
+                    <View style={styles.logoContainer}>
+                        <Wind size={20} color="#3498DB" strokeWidth={1.5} />
+                    </View>
+                    <View>
+                        <Text style={styles.headerTitle}>Aetheria</Text>
+                        <Text style={styles.headerSubtitle}>Terapia Respiratória</Text>
+                    </View>
+                </View>
+
+                <View style={styles.headerActions}>
+                    <TouchableOpacity
+                        style={styles.headerButton}
+                        onPress={handleMenuToggle}
+                    >
+                        <Menu size={20} color="#666" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
-            <View style={styles.gamesContainer}>
-                <TouchableOpacity
-                    style={[styles.gameCard, styles.testCard]}
-                    onPress={() => navigation.navigate('BreathTest')}
-                >
-                    <Text style={styles.gameEmoji}>🌬️</Text>
-                    <Text style={styles.gameTitle}>Detecção de Sopro</Text>
-                    <Text style={styles.gameDescription}>
-                        Sistema avançado para detectar apenas sopros!
+            {/* Main Content */}
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {/* Welcome Section */}
+                <View style={styles.welcomeSection}>
+                    <Text style={styles.welcomeTitle}>Bem-vindo de volta!</Text>
+                    <Text style={styles.welcomeSubtitle}>
+                        Escolha um jogo para praticar seus exercícios respiratórios
                     </Text>
-                </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity
-                    style={styles.gameCard}
-                    onPress={() => navigation.navigate('MicTest')}
-                >
-                    <Text style={styles.gameEmoji}>🎤</Text>
-                    <Text style={styles.gameTitle}>Teste de Microfone</Text>
-                    <Text style={styles.gameDescription}>
-                        Teste o microfone e veja como o áudio é processado!
-                    </Text>
-                </TouchableOpacity>
+                {/* Games Grid */}
+                <View style={styles.gamesGrid}>
+                    {games.map((game) => (
+                        <TouchableOpacity
+                            key={game.id}
+                            style={[styles.gameCard, { backgroundColor: '#fff' }]}
+                            onPress={() => handleGamePress(game)}
+                        >
+                            <View style={styles.gameIconContainer}>
+                                <game.icon size={40} color={game.iconColor.includes('blue') ? '#3B82F6' : '#EF4444'} strokeWidth={1.5} />
+                            </View>
+                            <View style={styles.gameContent}>
+                                <Text style={styles.gameTitle}>{game.title}</Text>
+                                <Text style={styles.gameDescription}>{game.description}</Text>
+                            </View>
+                            <TouchableOpacity
+                                style={styles.playButton}
+                                onPress={() => handleGamePress(game)}
+                            >
+                                <Text style={styles.playButtonText}>Jogar Agora</Text>
+                            </TouchableOpacity>
+                        </TouchableOpacity>
+                    ))}
+                </View>
 
-                <TouchableOpacity
-                    style={styles.gameCard}
-                    onPress={() => navigation.navigate('BoatGame')}
-                >
-                    <Text style={styles.gameEmoji}>🚤</Text>
-                    <Text style={styles.gameTitle}>Barquinho</Text>
-                    <Text style={styles.gameDescription}>
-                        Assopre no microfone para fazer o barco navegar pelo mar!
-                    </Text>
-                </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={styles.gameCard}
-                    onPress={() => navigation.navigate('BalloonGame')}
-                >
-                    <Text style={styles.gameEmoji}>🎈</Text>
-                    <Text style={styles.gameTitle}>Balão do Palhaço</Text>
-                    <Text style={styles.gameDescription}>
-                        Encha o balão com seu sopro e faça o palhaço subir!
-                    </Text>
-                </TouchableOpacity>
-            </View>
+                {/* Stats Section */}
+                <View style={styles.statsSection}>
+                    <View style={styles.statCard}>
+                        <Text style={styles.statValue}>12</Text>
+                        <Text style={styles.statLabel}>Sessões</Text>
+                    </View>
+                    <View style={styles.statCard}>
+                        <Text style={styles.statValue}>45</Text>
+                        <Text style={styles.statLabel}>Minutos</Text>
+                    </View>
+                    <View style={styles.statCard}>
+                        <Text style={styles.statValue}>7</Text>
+                        <Text style={styles.statLabel}>Dias</Text>
+                    </View>
+                </View>
+            </ScrollView>
 
-            <View style={styles.footer}>
-                <Text style={styles.footerText}>
-                    💡 Dica: Mantenha o telefone próximo ao seu rosto e assopre suavemente
-                </Text>
-            </View>
+            {/* Menu Hambúrguer Modal */}
+            <Modal
+                visible={isMenuOpen}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={handleMenuClose}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.menuContainer}>
+                        {/* Header do Menu */}
+                        <View style={styles.menuHeader}>
+                            <Text style={styles.menuTitle}>Menu</Text>
+                            <TouchableOpacity
+                                style={styles.closeButton}
+                                onPress={handleMenuClose}
+                            >
+                                <X size={24} color="#666" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Opções do Menu */}
+                        <View style={styles.menuOptions}>
+                            <TouchableOpacity
+                                style={styles.menuOption}
+                                onPress={handleProfile}
+                            >
+                                <View style={styles.menuOptionIcon}>
+                                    <User size={24} color="#3498DB" />
+                                </View>
+                                <View style={styles.menuOptionContent}>
+                                    <Text style={styles.menuOptionTitle}>Perfil</Text>
+                                    <Text style={styles.menuOptionDescription}>Ver e editar seu perfil</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.menuOption}
+                                onPress={handlePatients}
+                            >
+                                <View style={styles.menuOptionIcon}>
+                                    <Users size={24} color="#10B981" />
+                                </View>
+                                <View style={styles.menuOptionContent}>
+                                    <Text style={styles.menuOptionTitle}>Área do Médico</Text>
+                                    <Text style={styles.menuOptionDescription}>Gerenciar pacientes</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.menuOption}
+                                onPress={handleLogout}
+                            >
+                                <View style={styles.menuOptionIcon}>
+                                    <LogOut size={24} color="#EF4444" />
+                                </View>
+                                <View style={styles.menuOptionContent}>
+                                    <Text style={styles.menuOptionTitle}>Sair</Text>
+                                    <Text style={styles.menuOptionDescription}>Fazer logout da conta</Text>
+                                </View>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -79,82 +232,290 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#E8F4FD',
-        paddingHorizontal: 20,
+        backgroundColor: '#F8FAFC',
     },
     header: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 40,
-        marginBottom: 40,
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E2E8F0',
     },
-    title: {
-        fontSize: 36,
-        fontWeight: 'bold',
-        color: '#2C3E50',
-        marginBottom: 10,
+    headerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
     },
-    subtitle: {
-        fontSize: 18,
-        color: '#34495E',
-        marginBottom: 10,
-        textAlign: 'center',
+    logoContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: '#EBF8FF',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    description: {
-        fontSize: 16,
-        color: '#7F8C8D',
-        textAlign: 'center',
+    headerTitle: {
+        fontSize: 20,
+        fontWeight: '300',
+        color: '#1E293B',
+        letterSpacing: -0.5,
+    },
+    headerSubtitle: {
+        fontSize: 12,
+        color: '#64748B',
+    },
+    headerActions: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    headerButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F1F5F9',
+    },
+    content: {
+        flex: 1,
         paddingHorizontal: 20,
     },
-    gamesContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+    welcomeSection: {
+        marginTop: 32,
+        marginBottom: 32,
+    },
+    welcomeTitle: {
+        fontSize: 32,
+        fontWeight: '300',
+        color: '#1E293B',
+        letterSpacing: -0.5,
+        marginBottom: 8,
+    },
+    welcomeSubtitle: {
+        fontSize: 16,
+        color: '#64748B',
+    },
+    gamesGrid: {
+        gap: 24,
+        marginBottom: 48,
     },
     gameCard: {
-        backgroundColor: 'white',
-        borderRadius: 20,
-        padding: 30,
-        marginVertical: 15,
-        width: width - 40,
-        alignItems: 'center',
+        borderRadius: 16,
+        padding: 24,
         shadowColor: '#000',
         shadowOffset: {
             width: 0,
             height: 2,
         },
         shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        shadowRadius: 8,
+        elevation: 3,
+        alignItems: 'center',
     },
-    testCard: {
-        backgroundColor: '#E8F5E8',
-        borderWidth: 2,
-        borderColor: '#27AE60',
+    gameIconContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 20,
+        backgroundColor: '#F8FAFC',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 1,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    gameEmoji: {
-        fontSize: 50,
-        marginBottom: 15,
+    gameContent: {
+        alignItems: 'center',
+        marginBottom: 16,
     },
     gameTitle: {
         fontSize: 24,
-        fontWeight: 'bold',
-        color: '#2C3E50',
-        marginBottom: 10,
+        fontWeight: '300',
+        color: '#1E293B',
+        letterSpacing: -0.5,
+        marginBottom: 8,
     },
     gameDescription: {
-        fontSize: 16,
-        color: '#7F8C8D',
+        fontSize: 14,
+        color: '#64748B',
         textAlign: 'center',
-        lineHeight: 22,
+        lineHeight: 20,
     },
-    footer: {
-        paddingVertical: 20,
+    playButton: {
+        width: '100%',
+        height: 48,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    playButtonText: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#1E293B',
+    },
+    statsSection: {
+        flexDirection: 'row',
+        gap: 16,
+        marginBottom: 32,
+    },
+    statCard: {
+        flex: 1,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+    },
+    statValue: {
+        fontSize: 24,
+        fontWeight: '300',
+        color: '#1E293B',
+        marginBottom: 4,
+    },
+    statLabel: {
+        fontSize: 12,
+        color: '#64748B',
+    },
+    doctorSection: {
+        marginBottom: 32,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#1E293B',
+        marginBottom: 16,
+    },
+    doctorCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    doctorCardContent: {
+        flexDirection: 'row',
         alignItems: 'center',
     },
-    footerText: {
+    doctorIconContainer: {
+        width: 60,
+        height: 60,
+        borderRadius: 16,
+        backgroundColor: '#EBF8FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 16,
+    },
+    doctorTextContainer: {
+        flex: 1,
+    },
+    doctorCardTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#1E293B',
+        marginBottom: 4,
+    },
+    doctorCardDescription: {
         fontSize: 14,
-        color: '#95A5A6',
-        textAlign: 'center',
-        fontStyle: 'italic',
+        color: '#64748B',
+        lineHeight: 20,
+    },
+    doctorArrow: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    doctorArrowText: {
+        fontSize: 18,
+        color: '#3498DB',
+        fontWeight: '600',
+    },
+    // Menu Hambúrguer Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    menuContainer: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: 34, // Safe area para iPhone
+        maxHeight: '70%',
+    },
+    menuHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E2E8F0',
+    },
+    menuTitle: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#1E293B',
+    },
+    closeButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    menuOptions: {
+        paddingHorizontal: 20,
+        paddingTop: 20,
+    },
+    menuOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        marginBottom: 8,
+        backgroundColor: '#F8FAFC',
+    },
+    menuOptionIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#EBF8FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 16,
+    },
+    menuOptionContent: {
+        flex: 1,
+    },
+    menuOptionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1E293B',
+        marginBottom: 4,
+    },
+    menuOptionDescription: {
+        fontSize: 14,
+        color: '#64748B',
     },
 });

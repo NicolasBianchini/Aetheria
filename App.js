@@ -1,74 +1,60 @@
 import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { StatusBar } from 'expo-status-bar';
-
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
-import MicTestScreen from './screens/MicTestScreen';
-import BreathTestScreen from './screens/BreathTestScreen';
-import BoatGame from './components/BoatGame';
-import BalloonGame from './components/BalloonGame';
+import ProfileScreen from './screens/ProfileScreen';
+import BoatGameScreen from './screens/BoatGameScreen';
 
 const Stack = createStackNavigator();
 
-export default function App() {
+function AppContent() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.text}>Carregando...</Text>
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
-      <StatusBar style="auto" />
-      <Stack.Navigator
-        initialRouteName="Home"
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: '#3498DB',
-          },
-          headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-            fontSize: 20,
-          },
-        }}
-      >
-        <Stack.Screen
-          name="Home"
-          component={HomeScreen}
-          options={{
-            title: 'Aetheria - Terapia Respiratória',
-            headerShown: false
-          }}
-        />
-        <Stack.Screen
-          name="MicTest"
-          component={MicTestScreen}
-          options={{
-            title: '🎤 Teste de Microfone',
-            headerBackTitle: 'Voltar'
-          }}
-        />
-        <Stack.Screen
-          name="BreathTest"
-          component={BreathTestScreen}
-          options={{
-            title: '🌬️ Detecção de Sopro',
-            headerBackTitle: 'Voltar'
-          }}
-        />
-        <Stack.Screen
-          name="BoatGame"
-          component={BoatGame}
-          options={{
-            title: '🚤 Jogo do Barquinho',
-            headerBackTitle: 'Voltar'
-          }}
-        />
-        <Stack.Screen
-          name="BalloonGame"
-          component={BalloonGame}
-          options={{
-            title: '🎈 Jogo do Balão',
-            headerBackTitle: 'Voltar'
-          }}
-        />
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!user ? (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        ) : (
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="BoatGame" component={BoatGameScreen} />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  text: {
+    fontSize: 18,
+    color: '#1E293B',
+  },
+});

@@ -13,10 +13,6 @@ from models.base_game import BaseGame
 import logging
 
 class BalloonGame(BaseGame):
-    """
-    Jogo do balão onde o palhaço sobe conforme o balão enche com sopros.
-    Herda de BaseGame e implementa comportamentos específicos.
-    """
     
     def __init__(self, game_id: str, player_name: str = "Jogador"):
         """
