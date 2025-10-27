@@ -7,6 +7,10 @@ import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BoatGameScreen from './screens/BoatGameScreen';
+import PatientsScreen from './screens/PatientsScreen';
+import PatientDetailScreen from './screens/PatientDetailScreen';
+import PatientReportScreen from './screens/PatientReportScreen';
+import SelectPatientScreen from './screens/SelectPatientScreen';
 
 const Stack = createStackNavigator();
 
@@ -30,7 +34,11 @@ function AppContent() {
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="SelectPatient" component={SelectPatientScreen} />
             <Stack.Screen name="BoatGame" component={BoatGameScreen} />
+            <Stack.Screen name="Patients" component={PatientsScreen} />
+            <Stack.Screen name="PatientDetail" component={PatientDetailScreen} />
+            <Stack.Screen name="PatientReport" component={PatientReportScreen} />
           </>
         )}
       </Stack.Navigator>

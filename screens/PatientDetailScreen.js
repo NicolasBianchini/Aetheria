@@ -282,7 +282,10 @@ export default function PatientDetailScreen({ route, navigation }) {
             <Play size={20} color="#fff" />
             <Text style={styles.quickActionText}>Iniciar Sessão</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionButton}>
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={() => navigation.navigate('PatientReport', { patient })}
+          >
             <BarChart3 size={20} color="#fff" />
             <Text style={styles.quickActionText}>Relatório Detalhado</Text>
           </TouchableOpacity>

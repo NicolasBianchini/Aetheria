@@ -31,13 +31,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import FirestoreService from '../services/FirestoreService';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function PatientsScreen({ navigation }) {
+  const { user } = useAuth();
   const [patients, setPatients] = useState([]);
   const [filteredPatients, setFilteredPatients] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [editingPatient, setEditingPatient] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [newPatient, setNewPatient] = useState({
     name: '',
     email: '',
@@ -51,67 +57,25 @@ export default function PatientsScreen({ navigation }) {
     lastActivity: 'all',
   });
 
-  // Dados mockados para demonstração
+  // Carregar pacientes do Firestore
   useEffect(() => {
-    const mockPatients = [
-      {
-        id: '1',
-        name: 'Maria Silva',
-        email: 'maria.silva@email.com',
-        age: 45,
-        condition: 'Asma',
-        phone: '(11) 99999-9999',
-        lastActivity: '2024-01-20',
-        totalSessions: 15,
-        avgScore: 85,
-        improvement: 12,
-        gamesPlayed: {
-          balloon: 8,
-          boat: 7,
-        },
-        recentScores: [78, 82, 85, 88, 90],
-        status: 'active',
-      },
-      {
-        id: '2',
-        name: 'João Santos',
-        email: 'joao.santos@email.com',
-        age: 38,
-        condition: 'DPOC',
-        phone: '(11) 88888-8888',
-        lastActivity: '2024-01-19',
-        totalSessions: 22,
-        avgScore: 72,
-        improvement: 8,
-        gamesPlayed: {
-          balloon: 12,
-          boat: 10,
-        },
-        recentScores: [65, 68, 70, 72, 75],
-        status: 'active',
-      },
-      {
-        id: '3',
-        name: 'Ana Costa',
-        email: 'ana.costa@email.com',
-        age: 52,
-        condition: 'Bronquite',
-        phone: '(11) 77777-7777',
-        lastActivity: '2024-01-18',
-        totalSessions: 8,
-        avgScore: 68,
-        improvement: 15,
-        gamesPlayed: {
-          balloon: 5,
-          boat: 3,
-        },
-        recentScores: [55, 60, 65, 68, 70],
-        status: 'inactive',
-      },
-    ];
-    setPatients(mockPatients);
-    setFilteredPatients(mockPatients);
-  }, []);
+    loadPatients();
+  }, [user]);
+
+  const loadPatients = async () => {
+    try {
+      setLoading(true);
+      if (user?.id) {
+        const patientsData = await FirestoreService.getPatientsByUser(user.id);
+        setPatients(patientsData);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar pacientes:', error);
+      Alert.alert('Erro', 'Não foi possível carregar os pacientes');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filtrar pacientes
   useEffect(() => {
@@ -155,38 +119,48 @@ export default function PatientsScreen({ navigation }) {
     setFilteredPatients(filtered);
   }, [patients, searchText, filterOptions]);
 
-  const handleAddPatient = () => {
+  const handleAddPatient = async () => {
     if (!newPatient.name || !newPatient.email || !newPatient.age || !newPatient.condition) {
       Alert.alert('Erro', 'Por favor, preencha todos os campos obrigatórios');
       return;
     }
 
-    const patient = {
-      id: Date.now().toString(),
-      ...newPatient,
-      age: parseInt(newPatient.age),
-      lastActivity: new Date().toISOString().split('T')[0],
-      totalSessions: 0,
-      avgScore: 0,
-      improvement: 0,
-      gamesPlayed: {
-        balloon: 0,
-        boat: 0,
-      },
-      recentScores: [],
-      status: 'active',
-    };
+    try {
+      const patientData = {
+        userId: user.id,
+        name: newPatient.name,
+        email: newPatient.email,
+        age: parseInt(newPatient.age),
+        condition: newPatient.condition,
+        phone: newPatient.phone || '',
+        lastActivity: new Date().toISOString().split('T')[0],
+        totalSessions: 0,
+        avgScore: 0,
+        improvement: 0,
+        gamesPlayed: {
+          balloon: 0,
+          boat: 0,
+        },
+        recentScores: [],
+        status: 'active',
+      };
 
-    setPatients([...patients, patient]);
-    setNewPatient({
-      name: '',
-      email: '',
-      age: '',
-      condition: '',
-      phone: '',
-    });
-    setShowAddModal(false);
-    Alert.alert('Sucesso', 'Paciente adicionado com sucesso!');
+      await FirestoreService.createPatient(patientData);
+      
+      setNewPatient({
+        name: '',
+        email: '',
+        age: '',
+        condition: '',
+        phone: '',
+      });
+      setShowAddModal(false);
+      Alert.alert('Sucesso', 'Paciente adicionado com sucesso!');
+      loadPatients(); // Recarregar lista
+    } catch (error) {
+      console.error('Erro ao adicionar paciente:', error);
+      Alert.alert('Erro', 'Não foi possível adicionar o paciente');
+    }
   };
 
   const handleViewPatient = (patient) => {
@@ -194,8 +168,38 @@ export default function PatientsScreen({ navigation }) {
   };
 
   const handleEditPatient = (patient) => {
-    // Implementar edição de paciente
-    Alert.alert('Editar Paciente', `Editar ${patient.name}`);
+    setEditingPatient({
+      ...patient,
+      age: patient.age.toString(),
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdatePatient = async () => {
+    if (!editingPatient.name || !editingPatient.email || !editingPatient.age || !editingPatient.condition) {
+      Alert.alert('Erro', 'Por favor, preencha todos os campos obrigatórios');
+      return;
+    }
+
+    try {
+      const patientData = {
+        name: editingPatient.name,
+        email: editingPatient.email,
+        age: parseInt(editingPatient.age),
+        condition: editingPatient.condition,
+        phone: editingPatient.phone || '',
+      };
+
+      await FirestoreService.updatePatient(editingPatient.id, patientData);
+      
+      setEditingPatient(null);
+      setShowEditModal(false);
+      Alert.alert('Sucesso', 'Paciente atualizado com sucesso!');
+      loadPatients(); // Recarregar lista
+    } catch (error) {
+      console.error('Erro ao atualizar paciente:', error);
+      Alert.alert('Erro', 'Não foi possível atualizar o paciente');
+    }
   };
 
   const handleDeletePatient = (patient) => {
@@ -207,9 +211,15 @@ export default function PatientsScreen({ navigation }) {
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => {
-            setPatients(patients.filter(p => p.id !== patient.id));
-            Alert.alert('Sucesso', 'Paciente excluído com sucesso!');
+          onPress: async () => {
+            try {
+              await FirestoreService.deletePatient(patient.id);
+              Alert.alert('Sucesso', 'Paciente excluído com sucesso!');
+              loadPatients(); // Recarregar lista
+            } catch (error) {
+              console.error('Erro ao excluir paciente:', error);
+              Alert.alert('Erro', 'Não foi possível excluir o paciente');
+            }
           },
         },
       ]
@@ -550,6 +560,81 @@ export default function PatientsScreen({ navigation }) {
                   </TouchableOpacity>
                 ))}
               </View>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Modal de Editar Paciente */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <Text style={styles.modalCancelButton}>Cancelar</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Editar Paciente</Text>
+            <TouchableOpacity onPress={handleUpdatePatient}>
+              <Text style={styles.modalSaveButton}>Salvar</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Nome Completo *</Text>
+              <Input
+                style={styles.input}
+                placeholder="Digite o nome completo"
+                value={editingPatient?.name}
+                onChangeText={(text) => setEditingPatient({ ...editingPatient, name: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>E-mail *</Text>
+              <Input
+                style={styles.input}
+                placeholder="Digite o e-mail"
+                value={editingPatient?.email}
+                onChangeText={(text) => setEditingPatient({ ...editingPatient, email: text })}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Idade *</Text>
+              <Input
+                style={styles.input}
+                placeholder="Digite a idade"
+                value={editingPatient?.age}
+                onChangeText={(text) => setEditingPatient({ ...editingPatient, age: text })}
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Condição Médica *</Text>
+              <Input
+                style={styles.input}
+                placeholder="Ex: Asma, DPOC, Bronquite"
+                value={editingPatient?.condition}
+                onChangeText={(text) => setEditingPatient({ ...editingPatient, condition: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Telefone</Text>
+              <Input
+                style={styles.input}
+                placeholder="(11) 99999-9999"
+                value={editingPatient?.phone}
+                onChangeText={(text) => setEditingPatient({ ...editingPatient, phone: text })}
+                keyboardType="phone-pad"
+              />
             </View>
           </ScrollView>
         </SafeAreaView>

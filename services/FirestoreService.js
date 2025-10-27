@@ -225,15 +225,26 @@ class FirestoreService {
     try {
       const q = query(
         collection(getDb(), COLLECTIONS.PATIENTS),
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('userId', '==', userId)
       );
       
       const querySnapshot = await getDocs(q);
       const patients = [];
       
       querySnapshot.forEach((doc) => {
-        patients.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        patients.push({ 
+          id: doc.id, 
+          ...data,
+          createdAt: data.createdAt || new Date().toISOString()
+        });
+      });
+      
+      // Ordenar em memória pela data de criação
+      patients.sort((a, b) => {
+        const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+        const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+        return bDate - aDate; // Ordem decrescente (mais recente primeiro)
       });
       
       return patients;
@@ -245,7 +256,8 @@ class FirestoreService {
 
   async updatePatient(patientId, patientData) {
     try {
-      const docRef = doc(db, COLLECTIONS.PATIENTS, patientId);
+      const firestoreDb = getDb();
+      const docRef = doc(firestoreDb, COLLECTIONS.PATIENTS, patientId);
       await updateDoc(docRef, {
         ...patientData,
         updatedAt: Timestamp.now()
@@ -259,7 +271,8 @@ class FirestoreService {
 
   async deletePatient(patientId) {
     try {
-      const docRef = doc(db, COLLECTIONS.PATIENTS, patientId);
+      const firestoreDb = getDb();
+      const docRef = doc(firestoreDb, COLLECTIONS.PATIENTS, patientId);
       await deleteDoc(docRef);
       return true;
     } catch (error) {

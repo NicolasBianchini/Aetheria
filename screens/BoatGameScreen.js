@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 import { ArrowLeft, Wind, Mic, MicOff } from 'lucide-react-native';
 import { Audio } from 'expo-av';
+import FirestoreService from '../services/FirestoreService';
 
 const { width, height } = Dimensions.get('window');
 
-export default function BoatGameScreen({ navigation }) {
+export default function BoatGameScreen({ navigation, route }) {
+    const { patient } = route.params || {};
     const [boatPosition, setBoatPosition] = useState(0);
     const [isBlowing, setIsBlowing] = useState(false);
     const [gameStarted, setGameStarted] = useState(false);
@@ -385,12 +387,51 @@ export default function BoatGameScreen({ navigation }) {
             // Verificar se chegou ao final
             if (newPosition >= width - 100) {
                 setGameFinished(true);
+                saveGameResult(); // Salvar resultados ao finalizar
             }
             
             // Parar de soprar após um tempo
             setTimeout(() => {
                 setIsBlowing(false);
             }, 300);
+        }
+    };
+
+    const saveGameResult = async () => {
+        if (!patient?.id) return;
+
+        try {
+            // Buscar paciente atualizado - usar método de busca direto no Firestore
+            const allPatients = await FirestoreService.getPatientsByUser(patient.userId || patient.id);
+            const updatedPatient = allPatients.find(p => p.id === patient.id) || patient;
+            if (!updatedPatient) return;
+
+            // Calcular novos valores
+            const newTotalSessions = (updatedPatient.totalSessions || 0) + 1;
+            const newGamesPlayed = {
+                ...updatedPatient.gamesPlayed,
+                boat: (updatedPatient.gamesPlayed?.boat || 0) + 1
+            };
+
+            // Calcular score médio
+            const currentAvgScore = updatedPatient.avgScore || 0;
+            const totalScores = newTotalSessions - 1;
+            const newAvgScore = totalScores > 0 
+                ? ((currentAvgScore * totalScores) + score) / newTotalSessions
+                : score;
+
+            // Atualizar paciente no Firestore
+            await FirestoreService.updatePatient(patient.id, {
+                totalSessions: newTotalSessions,
+                avgScore: Math.round(newAvgScore),
+                gamesPlayed: newGamesPlayed,
+                lastActivity: new Date().toISOString().split('T')[0],
+                status: 'active'
+            });
+
+            console.log('✅ Resultados salvos com sucesso!');
+        } catch (error) {
+            console.error('Erro ao salvar resultados:', error);
         }
     };
 

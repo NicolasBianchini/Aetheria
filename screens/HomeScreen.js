@@ -49,20 +49,14 @@ export default function HomeScreen() {
     };
 
     const handlePatients = () => {
+        console.log('🏥 Navegando para área do médico...');
         setIsMenuOpen(false);
-        Alert.alert('Área do Médico', 'Funcionalidade em desenvolvimento!');
+        navigation.navigate('Patients');
     };
 
     const handleGamePress = (game) => {
-        if (game.id === 'barquinho') {
-            navigation.navigate('BoatGame');
-        } else {
-            Alert.alert(
-                game.title,
-                `${game.description}\n\nFuncionalidade em desenvolvimento!`,
-                [{ text: 'OK' }]
-            );
-        }
+        // Navegar para tela de seleção de paciente
+        navigation.navigate('SelectPatient', { game });
     };
 
     const games = [
@@ -141,23 +135,6 @@ export default function HomeScreen() {
                             </TouchableOpacity>
                         </TouchableOpacity>
                     ))}
-                </View>
-
-
-                {/* Stats Section */}
-                <View style={styles.statsSection}>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statValue}>12</Text>
-                        <Text style={styles.statLabel}>Sessões</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statValue}>45</Text>
-                        <Text style={styles.statLabel}>Minutos</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statValue}>7</Text>
-                        <Text style={styles.statLabel}>Dias</Text>
-                    </View>
                 </View>
             </ScrollView>
 
@@ -361,30 +338,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
         color: '#1E293B',
-    },
-    statsSection: {
-        flexDirection: 'row',
-        gap: 16,
-        marginBottom: 32,
-    },
-    statCard: {
-        flex: 1,
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-    },
-    statValue: {
-        fontSize: 24,
-        fontWeight: '300',
-        color: '#1E293B',
-        marginBottom: 4,
-    },
-    statLabel: {
-        fontSize: 12,
-        color: '#64748B',
     },
     doctorSection: {
         marginBottom: 32,
