@@ -7,7 +7,7 @@ FIREBASE_MESSAGING_SENDER_ID=372690668887
 FIREBASE_APP_ID=1:372690668887:web:ea847f01ab661c7feb4212
 
 # API Configuration
-API_BASE_URL=http://localhost:5000
+API_BASE_URL=http://localhost:5001
 
 # App Configuration
 USE_FIREBASE=true

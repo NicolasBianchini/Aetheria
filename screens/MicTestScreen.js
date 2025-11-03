@@ -68,15 +68,37 @@ const MicTestScreen = ({ navigation }) => {
                 ])
             ).start();
 
-            // Simulação de nível de áudio
-            const audioInterval = setInterval(() => {
-                const level = Math.random() * 100;
-                setAudioLevel(level);
-                Animated.timing(levelAnim, {
-                    toValue: level,
-                    duration: 100,
-                    useNativeDriver: false,
-                }).start();
+            // DETECÇÃO REAL de nível de áudio através do metering
+            const audioInterval = setInterval(async () => {
+                if (recording) {
+                    try {
+                        const status = await recording.getStatusAsync();
+                        
+                        if (status.isRecording && status.metering !== undefined) {
+                            // Converter dB para escala 0-100
+                            const meteringDB = status.metering;
+                            // AJUSTADO: Thresholds mais restritivos para filtrar ruído ambiente
+                            const minDB = -50; // Ruído ambiente (mais alto = menos sensível)
+                            const maxDB = -5;  // Som muito alto (sopro direto no microfone)
+                            let level = ((meteringDB - minDB) / (maxDB - minDB)) * 100;
+                            level = Math.max(0, Math.min(100, level));
+                            
+                            // Aplicar curva de potência para reduzir sensibilidade a sons baixos
+                            level = Math.pow(level / 100, 1.5) * 100;
+                            
+                            console.log(`🎤 Metering: ${meteringDB.toFixed(2)} dB → ${level.toFixed(1)}%`);
+                            
+                            setAudioLevel(level);
+                            Animated.timing(levelAnim, {
+                                toValue: level,
+                                duration: 100,
+                                useNativeDriver: false,
+                            }).start();
+                        }
+                    } catch (error) {
+                        console.error('Erro ao obter status do áudio:', error);
+                    }
+                }
             }, 100);
 
             return () => clearInterval(audioInterval);
@@ -140,6 +162,8 @@ const MicTestScreen = ({ navigation }) => {
                     mimeType: 'audio/webm',
                     bitsPerSecond: 128000,
                 },
+                // ATIVAR METERING PARA DETECÇÃO REAL DE SOPRO
+                isMeteringEnabled: true,
             };
 
             const { recording: newRecording } = await Audio.Recording.createAsync(recordingOptions);

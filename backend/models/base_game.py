@@ -159,10 +159,38 @@ class BaseGame(ABC):
         self._audio_threshold = background_noise_level * 1.5  # 50% acima do ruído
         self._logger.info(f"Threshold calibrado para: {self._audio_threshold}")
     
+    def process_intensity(self, intensity: float, blow_detected: bool) -> Dict[str, Any]:
+        """
+        Processa intensidade de áudio diretamente (sem áudio real)
+        Usa dados reais do frontend
+        
+        Args:
+            intensity: Intensidade do áudio (0-1)
+            blow_detected: Se um sopro foi detectado
+            
+        Returns:
+            Dict com dados processados do jogo
+        """
+        if not self._is_active:
+            raise ValueError("Jogo não está ativo")
+        
+        # Processar intensidade (será implementado nas subclasses)
+        processed_data = self._process_intensity(intensity, blow_detected)
+        
+        # Atualizar score baseado no processamento
+        self._update_score(processed_data)
+        
+        return processed_data
+    
     # Métodos abstratos que devem ser implementados pelas subclasses
     @abstractmethod
     def _process_audio(self, audio_data: bytes, sample_rate: int) -> Dict[str, Any]:
         """Processa dados de áudio específicos do jogo"""
+        pass
+    
+    @abstractmethod
+    def _process_intensity(self, intensity: float, blow_detected: bool) -> Dict[str, Any]:
+        """Processa intensidade de áudio diretamente (sem áudio real)"""
         pass
     
     @abstractmethod

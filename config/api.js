@@ -1,7 +1,73 @@
 // Configuração da API do backend
+// IMPORTANTE: No React Native, localhost não funciona em emuladores/dispositivos
+// - Android Emulator: use 10.0.2.2 (IP especial que aponta para o host)
+// - iOS Simulator: localhost funciona
+// - Dispositivo físico: use o IP da máquina na rede local
+// Configure via variável de ambiente: API_BASE_URL=http://10.0.2.2:5001
+
+// Detectar automaticamente o ambiente
+let Platform;
+try {
+    Platform = require('react-native').Platform;
+} catch (e) {
+    // Não é React Native, usar fallback
+    Platform = null;
+}
+
+const getApiBaseUrl = () => {
+    // Se configurado via env, usar (sempre priorizar env)
+    if (process.env.API_BASE_URL) {
+        console.log('🌐 Usando API_BASE_URL do env:', process.env.API_BASE_URL);
+        return process.env.API_BASE_URL;
+    }
+    
+    // Detectar plataforma (React Native)
+    if (Platform) {
+        // IMPORTANTE: Expo Go em dispositivo físico não consegue acessar localhost
+        // Precisa usar o IP da máquina na rede local
+        // Para desenvolvimento, use o IP da máquina (ex: 172.20.10.7:5001)
+        
+        // Verificar se é um dispositivo físico (via Constants)
+        let isPhysicalDevice = false;
+        try {
+            const Constants = require('expo-constants');
+            // Se não for um emulador/simulador, é dispositivo físico
+            isPhysicalDevice = !Constants.isDevice || Constants.executionEnvironment !== 'standalone';
+        } catch (e) {
+            // Se não conseguir detectar, assume que pode ser dispositivo físico
+            isPhysicalDevice = true;
+        }
+        
+        if (Platform.OS === 'android') {
+            // Android Emulator: 10.0.2.2 aponta para o host
+            // Android dispositivo físico: precisa do IP da máquina
+            const url = isPhysicalDevice ? 'http://172.20.10.7:5001' : 'http://10.0.2.2:5001';
+            console.log('🌐 Android detectado, usando:', url, isPhysicalDevice ? '(dispositivo físico)' : '(emulador)');
+            return url;
+        } else if (Platform.OS === 'ios') {
+            // iOS Simulator: localhost funciona
+            // iOS dispositivo físico: precisa do IP da máquina
+            const url = isPhysicalDevice ? 'http://172.20.10.7:5001' : 'http://localhost:5001';
+            console.log('🌐 iOS detectado, usando:', url, isPhysicalDevice ? '(dispositivo físico)' : '(simulador)');
+            return url;
+        }
+    }
+    
+    // Fallback: para dispositivo físico, usar IP da máquina
+    // IMPORTANTE: Atualize o IP abaixo com o IP da sua máquina na rede local
+    const url = 'http://172.20.10.7:5001';
+    console.log('🌐 Fallback, usando IP da máquina:', url);
+    return url;
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Log para debug (remover em produção)
+console.log('🌐 API Base URL configurada:', API_BASE_URL);
+
 const API_CONFIG = {
     // URL base do backend Python
-    BASE_URL: 'http://10.125.136.89:3000',
+    BASE_URL: API_BASE_URL,
 
     // Endpoints da API
     ENDPOINTS: {
@@ -57,7 +123,24 @@ export const apiRequest = async (url, options = {}) => {
         const response = await fetch(url, requestOptions);
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            // Tentar obter mensagem de erro do backend se disponível
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                if (errorData.message) {
+                    errorMessage = errorData.message;
+                }
+                // Adicionar código HTTP ao erro para facilitar detecção
+                const enhancedError = new Error(errorMessage);
+                enhancedError.status = response.status;
+                enhancedError.response = errorData;
+                throw enhancedError;
+            } catch (jsonError) {
+                // Se não conseguir parsear JSON, usar mensagem padrão
+                const enhancedError = new Error(errorMessage);
+                enhancedError.status = response.status;
+                throw enhancedError;
+            }
         }
 
         return await response.json();

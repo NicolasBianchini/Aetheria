@@ -14,6 +14,7 @@ import { Audio } from 'expo-av';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import BackendGameService from '../services/BackendGameService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -22,14 +23,14 @@ export default function BalloonGame({ navigation }) {
     const [recording, setRecording] = useState(null);
     const [soundLevel, setSoundLevel] = useState(0);
     const [balloonSize, setBalloonSize] = useState(20);
-    const [clownHeight, setClownHeight] = useState(0);
     const [gameStarted, setGameStarted] = useState(false);
     const [score, setScore] = useState(0);
     const [gameComplete, setGameComplete] = useState(false);
     const [balloonPopped, setBalloonPopped] = useState(false);
     const balloonAnimation = useRef(new Animated.Value(1)).current;
-    const clownAnimation = useRef(new Animated.Value(0)).current;
     const recordingRef = useRef(null);
+    const backgroundNoiseLevel = useRef([]); // Para calibração de ruído ambiente
+    const noiseThreshold = useRef(null); // Threshold dinâmico baseado no ruído
 
     useEffect(() => {
         return () => {
@@ -52,55 +53,212 @@ export default function BalloonGame({ navigation }) {
                 playsInSilentModeIOS: true,
             });
 
+            // Criar jogo no backend Python
+            const gameInfo = await BackendGameService.createGame('balloon', 'Jogador');
+            await BackendGameService.startGame(gameInfo.game_id);
+
             setGameStarted(true);
             startRecording();
         } catch (error) {
-            console.error('Erro ao iniciar jogo:', error);
+            console.error('Erro ao iniciar jogo no backend:', error);
+            alert('Erro ao conectar ao backend. Verifique se o servidor está rodando.');
         }
     };
 
     const startRecording = async () => {
         try {
-            const { recording } = await Audio.Recording.createAsync(
-                Audio.RecordingOptionsPresets.HIGH_QUALITY
-            );
+            // Configurar opções de gravação com metering habilitado
+            const recordingOptions = {
+                android: {
+                    extension: '.m4a',
+                    outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
+                    audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
+                    sampleRate: 44100,
+                    numberOfChannels: 1,
+                    bitRate: 128000,
+                },
+                ios: {
+                    extension: '.m4a',
+                    outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_MPEG4AAC,
+                    audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+                    sampleRate: 44100,
+                    numberOfChannels: 1,
+                    bitRate: 128000,
+                    linearPCMBitDepth: 16,
+                    linearPCMIsBigEndian: false,
+                    linearPCMIsFloat: false,
+                },
+                web: {
+                    mimeType: 'audio/webm',
+                    bitsPerSecond: 128000,
+                },
+                // ATIVAR METERING PARA DETECÇÃO REAL DE SOPRO
+                isMeteringEnabled: true,
+            };
+
+            const { recording } = await Audio.Recording.createAsync(recordingOptions);
             setRecording(recording);
             setIsRecording(true);
             recordingRef.current = recording;
 
-            // Simular detecção de nível de som
-            const interval = setInterval(() => {
+            // USAR DETECÇÃO REAL DE ÁUDIO através do metering
+            const interval = setInterval(async () => {
+                // Verificar se o jogo foi iniciado antes de processar áudio
+                // Mas permitir processar mesmo se não estiver ativo (processAudio vai iniciar automaticamente)
+                if (!BackendGameService.currentGameId) {
+                    console.warn('⚠️ Jogo não criado ainda, aguardando...');
+                    return; // Pular apenas se não tiver gameId
+                }
+                
                 if (recordingRef.current) {
-                    // Simular nível de sopro baseado em tempo
-                    const randomLevel = Math.random() * 100;
-                    setSoundLevel(randomLevel);
+                    try {
+                        const status = await recordingRef.current.getStatusAsync();
+                        
+                        if (status.isRecording && status.metering !== undefined) {
+                            // USAR DADOS REAIS DO MICROFONE através do metering
+                            const meteringDB = status.metering;
+                            
+                            let normalizedLevel = 0;
+                            
+                            // CALIBRAÇÃO DINÂMICA: Calcular ruído ambiente médio nos primeiros segundos
+                            if (backgroundNoiseLevel.current.length < 30) {
+                                // Primeiros 30 frames (~3 segundos a 100ms) para calibrar ruído ambiente
+                                backgroundNoiseLevel.current.push(meteringDB);
+                                normalizedLevel = 0; // Zerar durante calibração
+                                if (backgroundNoiseLevel.current.length === 30) {
+                                    // Calcular threshold após calibração
+                                    const sorted = [...backgroundNoiseLevel.current].sort((a, b) => a - b);
+                                    // Usar mediana (50%) para ser mais robusto a outliers
+                                    const medianNoise = sorted[15];
+                                    // Calcular desvio padrão simples (diferença entre quartis)
+                                    const q1 = sorted[7]; // 25%
+                                    const q3 = sorted[22]; // 75%
+                                    const iqr = q3 - q1; // Interquartile range
+                                    
+                                    // Threshold dinâmico: calcular baseado no ruído ambiente
+                                    // IMPORTANTE: Se a mediana for muito alta (> -30 dB), ambiente está muito barulhento
+                                    // Usar threshold fixo baseado no ambiente
+                                    let calculatedThreshold;
+                                    
+                                    if (medianNoise > -30) {
+                                        // Ambiente MUITO barulhento (mediana > -30 dB) - usar threshold fixo alto
+                                        calculatedThreshold = -40;
+                                        console.log(`⚠️ Ambiente muito barulhento (mediana: ${medianNoise.toFixed(2)} dB), usando threshold fixo: -40 dB`);
+                                    } else if (medianNoise > -45) {
+                                        // Ambiente barulhento (mediana entre -30 e -45 dB) - usar threshold fixo
+                                        calculatedThreshold = -45;
+                                        console.log(`⚠️ Ambiente barulhento (mediana: ${medianNoise.toFixed(2)} dB), usando threshold fixo: -45 dB`);
+                                    } else {
+                                        // Ambiente normal ou silencioso - usar threshold dinâmico
+                                        calculatedThreshold = medianNoise + 5 + (iqr * 0.1);
+                                        // Limitar entre -60 e -50 dB
+                                        if (calculatedThreshold > -50) {
+                                            calculatedThreshold = -50;
+                                        } else if (calculatedThreshold < -60) {
+                                            calculatedThreshold = -55;
+                                        }
+                                    }
+                                    
+                                    // Garantir que threshold seja sempre negativo e razoável
+                                    if (calculatedThreshold > 0) {
+                                        // Se threshold for positivo, usar valor fixo
+                                        calculatedThreshold = -45;
+                                        console.log(`⚠️ Threshold positivo detectado, usando fallback: -45 dB`);
+                                    } else if (calculatedThreshold > -30) {
+                                        // Se threshold estiver muito alto (> -30 dB), limitar
+                                        calculatedThreshold = -40;
+                                        console.log(`⚠️ Threshold muito alto (${calculatedThreshold.toFixed(2)} dB), limitando para: -40 dB`);
+                                    }
+                                    
+                                    noiseThreshold.current = calculatedThreshold;
+                                    console.log(`🎯 Calibração concluída - Mediana: ${medianNoise.toFixed(2)} dB, IQR: ${iqr.toFixed(2)} dB, Threshold: ${noiseThreshold.current.toFixed(2)} dB`);
+                                }
+                            } else {
+                                // Usar threshold dinâmico calculado (FIXO após calibração)
+                                if (noiseThreshold.current === null) {
+                                    // Fallback se não calibrou - usar threshold conservador
+                                    noiseThreshold.current = -55;
+                                    console.log(`⚠️ Calibração não concluída, usando threshold padrão: -55 dB`);
+                                }
+                                
+                                // FILTRO: Só processar se estiver significativamente acima do threshold
+                                // Adicionar margem de segurança para filtrar ruído próximo ao threshold
+                                const safetyMargin = 3; // dB de margem de segurança acima do threshold
+                                const effectiveThreshold = noiseThreshold.current + safetyMargin;
+                                
+                                if (meteringDB < effectiveThreshold) {
+                                    normalizedLevel = 0; // Ruído ambiente ou muito próximo do threshold, ignorar
+                                } else {
+                                    // Calcular nível normalizado acima do threshold efetivo
+                                    const minDB = effectiveThreshold;
+                                    const maxDB = -10; // Sopro direto no microfone (muito forte)
+                                    normalizedLevel = ((meteringDB - minDB) / (maxDB - minDB)) * 100;
+                                    normalizedLevel = Math.max(0, Math.min(100, normalizedLevel));
+                                    
+                                    // Aplicar curva de potência moderada para reduzir ruído residual
+                                    normalizedLevel = Math.pow(normalizedLevel / 100, 2.0) * 100;
+                                    
+                                    // Filtro adicional: só considerar se for significativo (>= 15%)
+                                    // Aumentado de 10% para 15% para filtrar melhor ruído externo
+                                    if (normalizedLevel < 15) {
+                                        normalizedLevel = 0; // Muito baixo, ignorar
+                                    }
+                                }
+                                
+                                // Debug: log quando detectar algo
+                                if (normalizedLevel > 0) {
+                                    console.log(`🎤 Sopro detectado: ${meteringDB.toFixed(2)} dB → ${normalizedLevel.toFixed(1)}% (Threshold efetivo: ${effectiveThreshold.toFixed(2)} dB)`);
+                                }
+                            }
+                            
+                            // Log apenas quando houver mudança significativa ou durante calibração
+                            if (backgroundNoiseLevel.current.length < 30 || normalizedLevel > 0) {
+                                console.log(`🎤 Metering: ${meteringDB.toFixed(2)} dB → ${normalizedLevel.toFixed(1)}% (Threshold: ${noiseThreshold.current ? noiseThreshold.current.toFixed(2) : 'calibrando'} dB)`);
+                            }
+                            
+                            setSoundLevel(normalizedLevel);
 
-                    // Aumentar tamanho do balão e altura do palhaço baseado no sopro
-                    const newSize = Math.min(20 + (randomLevel / 2), 100);
-                    const newHeight = Math.min(randomLevel * 2, 200);
+                            // ENVIAR PARA BACKEND PYTHON - backend controla tamanho do balão
+                            try {
+                                const gameState = await BackendGameService.processAudio(normalizedLevel / 100, meteringDB);
+                                
+                                // BACKEND CONTROLA: tamanho do balão, pressão, estouro, etc.
+                                // gameState.balloon_size_percent já vem em porcentagem (20-200%)
+                                const newSize = gameState.balloon_size_percent || 20;
+                                
+                                setBalloonSize(newSize);
 
-                    setBalloonSize(newSize);
-                    setClownHeight(newHeight);
+                                // Animar escala do balão (inflando)
+                                Animated.timing(balloonAnimation, {
+                                    toValue: newSize / 20, // Escala de 1x até 10x
+                                    duration: 100,
+                                    useNativeDriver: true,
+                                }).start();
 
-                    Animated.timing(balloonAnimation, {
-                        toValue: newSize / 20,
-                        duration: 200,
-                        useNativeDriver: true,
-                    }).start();
+                                // Atualizar score do backend (vem direto no gameState)
+                                setScore(gameState.score || 0);
 
-                    Animated.timing(clownAnimation, {
-                        toValue: newHeight,
-                        duration: 200,
-                        useNativeDriver: true,
-                    }).start();
-
-                    if (newSize >= 100 && !gameComplete) {
-                        setGameComplete(true);
-                        setScore(prev => prev + 150);
-                    }
-                    if (newSize >= 110) {
-                        setBalloonPopped(true);
-                        setScore(prev => prev - 50);
+                                // Verificar se o balão estourou (backend retorna)
+                                if (gameState.is_balloon_popped && !balloonPopped) {
+                                    setBalloonPopped(true);
+                                    console.log('💥 Balão estourou!');
+                                    
+                                    // Parar gravação quando estourar
+                                    if (recordingRef.current) {
+                                        stopRecording();
+                                    }
+                                    await BackendGameService.endGame();
+                                } else if (gameState.is_balloon_full && !gameComplete && !balloonPopped) {
+                                    // Meta: encher até 80% (backend retorna is_balloon_full)
+                                    setGameComplete(true);
+                                    console.log('🎉 Parabéns! Balão enchido com sucesso!');
+                                }
+                            } catch (error) {
+                                console.error('Erro ao processar no backend:', error);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Erro ao obter status do áudio:', error);
                     }
                 }
             }, 100);
@@ -121,17 +279,31 @@ export default function BalloonGame({ navigation }) {
             setRecording(null);
             setIsRecording(false);
         }
+        
+        // Finalizar jogo no backend Python
+        try {
+            await BackendGameService.endGame();
+            BackendGameService.reset();
+        } catch (error) {
+            console.error('Erro ao finalizar jogo no backend:', error);
+        }
     };
 
     const resetGame = () => {
+        // Resetar frontend
         setBalloonSize(20);
-        setClownHeight(0);
         setSoundLevel(0);
         setGameStarted(false);
         setGameComplete(false);
         setBalloonPopped(false);
         balloonAnimation.setValue(1);
-        clownAnimation.setValue(0);
+        
+        // Resetar calibração de ruído
+        backgroundNoiseLevel.current = [];
+        noiseThreshold.current = null;
+        
+        // Resetar backend
+        BackendGameService.reset();
     };
 
     return (
@@ -161,7 +333,7 @@ export default function BalloonGame({ navigation }) {
                 <View style={styles.instructions}>
                     <Text style={styles.title}>Encha o balão!</Text>
                     <Text style={styles.subtitle}>
-                        Assopre no microfone para encher o balão e fazer o palhaço subir
+                        Assopre no microfone para encher o balão. Cuidado para não estourar!
                     </Text>
                 </View>
 
@@ -170,50 +342,32 @@ export default function BalloonGame({ navigation }) {
                     {/* Ground */}
                     <View style={styles.ground} />
 
-                    {/* Target Line */}
-                    <View style={styles.targetLine}>
-                        <Text style={styles.targetText}>Meta</Text>
-                    </View>
-
-                    {/* Balloon */}
-                    {!balloonPopped ? (
-                        <Animated.View
-                            style={[
-                                styles.balloon,
-                                {
-                                    transform: [
-                                        { scale: balloonAnimation },
-                                        { translateY: clownAnimation }
-                                    ],
-                                },
-                            ]}
-                        >
-                            <Text style={styles.balloonEmoji}>🎈</Text>
-                        </Animated.View>
-                    ) : (
-                        <Animated.View
-                            style={[
-                                styles.balloon,
-                                {
-                                    transform: [{ translateY: clownAnimation }],
-                                },
-                            ]}
-                        >
-                            <Text style={styles.explosionEmoji}>💥</Text>
-                        </Animated.View>
+                    {/* Warning Line - quando estiver perto do limite */}
+                    {balloonSize >= 180 && !balloonPopped && (
+                        <View style={styles.warningLine}>
+                            <Text style={styles.warningText}>⚠️ Cuidado! Quase estourando!</Text>
+                        </View>
                     )}
 
-                    {/* Clown */}
-                    <Animated.View
-                        style={[
-                            styles.clown,
-                            {
-                                transform: [{ translateY: clownAnimation }],
-                            },
-                        ]}
-                    >
-                        <Text style={styles.clownEmoji}>🤡</Text>
-                    </Animated.View>
+                    {/* Balloon - Centralizado */}
+                    <View style={styles.balloonContainer}>
+                        {!balloonPopped ? (
+                            <Animated.View
+                                style={[
+                                    styles.balloon,
+                                    {
+                                        transform: [{ scale: balloonAnimation }],
+                                    },
+                                ]}
+                            >
+                                <Text style={styles.balloonEmoji}>🎈</Text>
+                            </Animated.View>
+                        ) : (
+                            <View style={styles.balloon}>
+                                <Text style={styles.explosionEmoji}>💥</Text>
+                            </View>
+                        )}
+                    </View>
 
                     {/* Clouds */}
                     <View style={styles.clouds}>
@@ -268,7 +422,7 @@ export default function BalloonGame({ navigation }) {
                 {/* Game Complete Message */}
                 {gameComplete && !balloonPopped && (
                     <View style={styles.successMessage}>
-                        <Text style={styles.successTitle}>Parabéns! O palhaço chegou ao topo!</Text>
+                        <Text style={styles.successTitle}>🎉 Parabéns! Balão enchido com sucesso!</Text>
                         <Text style={styles.successSubtitle}>+150 pontos</Text>
                     </View>
                 )}
@@ -276,7 +430,7 @@ export default function BalloonGame({ navigation }) {
                 {/* Balloon Popped Message */}
                 {balloonPopped && (
                     <View style={styles.errorMessage}>
-                        <Text style={styles.errorTitle}>Oh não! O balão estourou!</Text>
+                        <Text style={styles.errorTitle}>💥 Oh não! O balão estourou!</Text>
                         <Text style={styles.errorSubtitle}>-50 pontos. Tente novamente com mais cuidado!</Text>
                     </View>
                 )}
@@ -287,6 +441,7 @@ export default function BalloonGame({ navigation }) {
                     <View style={styles.tipsList}>
                         <Text style={styles.tip}>• Sopre de forma suave e controlada</Text>
                         <Text style={styles.tip}>• Não sopre muito forte ou o balão vai estourar!</Text>
+                        <Text style={styles.tip}>• Encha até 150% para ganhar pontos, mas cuidado com o limite!</Text>
                         <Text style={styles.tip}>• Mantenha a respiração constante para melhores resultados</Text>
                     </View>
                 </View>
@@ -396,10 +551,15 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         marginTop: -8,
     },
-    balloon: {
+    balloonContainer: {
         position: 'absolute',
-        bottom: 60,
-        left: width / 2 - 30,
+        bottom: 80,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    balloon: {
         width: 60,
         height: 60,
         alignItems: 'center',
@@ -409,19 +569,24 @@ const styles = StyleSheet.create({
         fontSize: 40,
     },
     explosionEmoji: {
-        fontSize: 60,
+        fontSize: 80,
     },
-    clown: {
+    warningLine: {
         position: 'absolute',
-        bottom: 50,
-        left: width / 2 - 25,
-        width: 50,
-        height: 50,
+        top: 20,
+        left: 0,
+        right: 0,
         alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        marginHorizontal: 20,
     },
-    clownEmoji: {
-        fontSize: 30,
+    warningText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#DC2626',
     },
     clouds: {
         position: 'absolute',

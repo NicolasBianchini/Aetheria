@@ -106,6 +106,8 @@ class BreathDetectionService {
                     mimeType: 'audio/webm',
                     bitsPerSecond: 128000,
                 },
+                // ATIVAR METERING PARA DETECÇÃO REAL DE SOPRO
+                isMeteringEnabled: true,
             };
 
             const { recording } = await Audio.Recording.createAsync(recordingOptions);
@@ -179,15 +181,54 @@ class BreathDetectionService {
     }
 
     async analyzeAudioChunk() {
-        // Simulação de análise de áudio
-        // Em implementação real, usaria Web Audio API para análise de frequência
+        // ANÁLISE REAL DE ÁUDIO usando metering do microfone
+        
+        try {
+            const status = await this.recording.getStatusAsync();
+            
+            if (status.isRecording && status.metering !== undefined) {
+                const meteringDB = status.metering;
+                
+                // Converter dB para intensidade 0-1
+                // AJUSTADO: Thresholds mais restritivos para filtrar ruído ambiente
+                const minDB = -50; // Ruído ambiente (mais alto = menos sensível)
+                const maxDB = -5;  // Som muito alto (sopro direto no microfone)
+                let intensity = (meteringDB - minDB) / (maxDB - minDB);
+                intensity = Math.max(0, Math.min(1, intensity));
+                
+                // Aplicar curva de potência para reduzir sensibilidade a sons baixos
+                intensity = Math.pow(intensity, 1.5);
+                
+                // Estimar frequência dominante baseada na intensidade
+                // Sopros suaves: ~100-500Hz, Sopros médios: ~300-800Hz, Sopros fortes: ~500-1500Hz
+                let dominantFrequency;
+                if (intensity < 0.3) {
+                    // Sopro suave
+                    dominantFrequency = 100 + (intensity / 0.3) * 400;
+                } else if (intensity < 0.6) {
+                    // Sopro médio
+                    dominantFrequency = 300 + ((intensity - 0.3) / 0.3) * 500;
+                } else {
+                    // Sopro forte
+                    dominantFrequency = 500 + ((intensity - 0.6) / 0.4) * 1000;
+                }
+                
+                console.log(`🎤 Metering: ${meteringDB.toFixed(2)} dB → Intensidade: ${(intensity * 100).toFixed(1)}% | Freq: ${dominantFrequency.toFixed(0)} Hz`);
 
-        const intensity = Math.random() * 1.0;
-        const dominantFrequency = this.generateBreathFrequency();
-
+                return {
+                    intensity,
+                    dominantFrequency,
+                    timestamp: Date.now(),
+                };
+            }
+        } catch (error) {
+            console.error('Erro ao analisar áudio:', error);
+        }
+        
+        // Fallback em caso de erro
         return {
-            intensity,
-            dominantFrequency,
+            intensity: 0,
+            dominantFrequency: 0,
             timestamp: Date.now(),
         };
     }

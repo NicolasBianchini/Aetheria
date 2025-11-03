@@ -158,12 +158,69 @@ class GameManager:
         # Processar no jogo específico
         game_data = game.process_audio_input(audio_bytes)
         
-        # Adicionar metadados de áudio
+        # Adicionar metadados de áudio e score
         game_data.update({
             "audio_metadata": metadata,
             "blow_detected": bool(blow_detected),
-            "blow_intensity": float(intensity)
+            "blow_intensity": float(intensity),
+            "score": game.score  # Score atualizado pelo backend
         })
+        
+        return game_data
+    
+    def process_audio_intensity(self, game_id: str, intensity: float, metering_db: float = None) -> Dict[str, Any]:
+        """
+        Processa intensidade de áudio diretamente (sem gerar áudio aleatório)
+        Usa dados reais do microfone do frontend
+        
+        Args:
+            game_id: ID do jogo
+            intensity: Intensidade do áudio (0-1) do frontend
+            metering_db: Nível de metering em dB (opcional)
+            
+        Returns:
+            Dict com dados processados do jogo
+        """
+        if game_id not in self._games:
+            raise ValueError(f"Jogo não encontrado: {game_id}")
+        
+        game = self._games[game_id]
+        
+        # Detectar sopro baseado na intensidade - equilíbrio entre captar sopros e filtrar ruído
+        blow_threshold = 0.15  # 15% - aumentado de 10% para filtrar melhor ruído externo
+        blow_detected = False  # Por padrão, não é sopro
+        
+        # Se tiver metering_db, usar análise mais precisa (prioridade)
+        if metering_db is not None:
+            # Sopro geralmente está entre -30 dB (forte) e -50 dB (fraco)
+            # Ruído ambiente geralmente está abaixo de -55 dB
+            # Threshold equilibrado: detectar se estiver acima de -50 dB (não muito restritivo)
+            db_threshold = -50.0  # dB - aumentado de -55 para filtrar melhor ruído
+            if metering_db > db_threshold:
+                # Se passar do threshold de dB E tiver intensidade mínima, é sopro
+                if intensity >= 0.10:  # Requer pelo menos 10% de intensidade (aumentado de 5%)
+                    blow_detected = True
+                else:
+                    blow_detected = False
+            else:
+                # Abaixo do threshold de dB = ruído ambiente ou silêncio
+                blow_detected = False
+        else:
+            # Se não tiver metering_db, usar apenas intensidade
+            blow_detected = intensity >= blow_threshold
+        
+        # Processar no jogo específico usando intensidade diretamente
+        game_data = game.process_intensity(intensity, blow_detected)
+        
+        # Adicionar metadados e score
+        game_data.update({
+            "blow_detected": bool(blow_detected),
+            "blow_intensity": float(intensity),
+            "score": game.score  # Score atualizado pelo backend
+        })
+        
+        if metering_db is not None:
+            game_data["audio_metering_db"] = float(metering_db)
         
         return game_data
     

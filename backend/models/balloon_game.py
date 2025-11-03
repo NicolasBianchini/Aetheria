@@ -76,15 +76,22 @@ class BalloonGame(BaseGame):
         # Atualizar tamanho do balão e altura do palhaço
         self._update_balloon_and_clown()
         
+        # Verificar se balão estourou
+        is_popped = self._balloon_pressure >= self._max_pressure * 0.95
+        # Verificar se balão está cheio (meta: 80% da pressão máxima)
+        is_full = self._balloon_pressure >= self._max_pressure * 0.8
+        
         return {
             "blow_detected": blow_detected,
             "blow_intensity": blow_intensity,
             "blow_duration": blow_duration,
-            "balloon_size": self._balloon_size,
-            "clown_height": self._clown_height,
+            "balloon_size": self._balloon_size,  # 1.0 a 10.0
             "balloon_pressure": self._balloon_pressure,
-            "game_progress": self._clown_height / 200.0,
-            "is_balloon_full": self._balloon_pressure >= self._max_pressure * 0.9
+            "balloon_pressure_percent": (self._balloon_pressure / self._max_pressure) * 100,  # 0-100%
+            "game_progress": self._balloon_pressure / self._max_pressure,  # 0-1
+            "is_balloon_full": is_full,
+            "is_balloon_popped": is_popped,
+            "balloon_size_percent": 20 + ((self._balloon_size - 1.0) / 9.0) * 180  # 20-200% para frontend
         }
     
     def _detect_continuous_blow(self, audio_array: np.ndarray, sample_rate: int) -> tuple[bool, float, float]:
@@ -180,23 +187,20 @@ class BalloonGame(BaseGame):
         self._balloon_pressure = max(self._balloon_pressure - self._leak_rate, 0)
     
     def _update_balloon_and_clown(self) -> None:
-        """Atualiza tamanho do balão e altura do palhaço"""
+        """Atualiza tamanho do balão (palhaço removido)"""
         # Tamanho do balão baseado na pressão
         pressure_ratio = self._balloon_pressure / self._max_pressure
-        self._balloon_size = 1.0 + (pressure_ratio * 2.0)  # 1.0 a 3.0
+        self._balloon_size = 1.0 + (pressure_ratio * 9.0)  # 1.0 a 10.0 (infla mais)
         
-        # Altura do palhaço baseada na pressão
-        self._clown_height = pressure_ratio * 200.0  # 0 a 200 pixels
-        
-        # Verificar se o balão estourou
-        if self._balloon_pressure >= self._max_pressure:
+        # Verificar se o balão estourou (quando chega muito perto do limite)
+        if self._balloon_pressure >= self._max_pressure * 0.95:  # 95% do máximo = estourou
             self._balloon_burst()
     
     def _balloon_burst(self) -> None:
         """Processa quando o balão estoura"""
         self._balloon_pressure = 0
         self._balloon_size = 1.0
-        self._clown_height = 0
+        self._clown_height = 0  # Mantido para compatibilidade mas não usado
         
         # Penalidade por estourar o balão
         self._score = max(0, self._score - 50)
@@ -221,6 +225,55 @@ class BalloonGame(BaseGame):
         if len(self._blow_sessions) > 50:
             self._blow_sessions.pop(0)
     
+    def _process_intensity(self, intensity: float, blow_detected: bool) -> Dict[str, Any]:
+        """
+        Processa intensidade de áudio diretamente (sem áudio real)
+        Usa dados reais do microfone do frontend
+        
+        Args:
+            intensity: Intensidade do áudio (0-1) do frontend
+            blow_detected: Se um sopro foi detectado
+            
+        Returns:
+            Dict com dados processados do jogo
+        """
+        # Se detectou sopro, adicionar pressão ao balão
+        # FILTRO: Só adiciona pressão se a intensidade for significativa (>= 50%)
+        # Isso filtra ruído ambiente que pode passar pelo threshold
+        if blow_detected and intensity >= 0.5:
+            # Calcular pressão baseado na intensidade (dados REAIS do microfone)
+            # Usar apenas a parte acima de 50% para evitar ruído
+            effective_intensity = (intensity - 0.5) * 2  # Normalizar para 0-1 considerando apenas acima de 50%
+            pressure_added = effective_intensity * 10  # Pressão proporcional à intensidade
+            self._add_pressure(pressure_added)
+            
+            # Registrar sessão de sopro
+            self._record_blow_session(intensity, 0.1)  # 0.1s = duração de cada frame
+        
+        # Aplicar vazamento natural do balão
+        self._apply_balloon_leak()
+        
+        # Atualizar tamanho do balão
+        self._update_balloon_and_clown()
+        
+        # Verificar se balão estourou
+        is_popped = self._balloon_pressure >= self._max_pressure * 0.95
+        # Verificar se balão está cheio (meta: 80% da pressão máxima)
+        is_full = self._balloon_pressure >= self._max_pressure * 0.8
+        
+        return {
+            "blow_detected": blow_detected,
+            "blow_intensity": intensity,
+            "blow_duration": 0.1 if blow_detected else 0,
+            "balloon_size": self._balloon_size,  # 1.0 a 10.0
+            "balloon_pressure": self._balloon_pressure,
+            "balloon_pressure_percent": (self._balloon_pressure / self._max_pressure) * 100,  # 0-100%
+            "game_progress": self._balloon_pressure / self._max_pressure,  # 0-1
+            "is_balloon_full": is_full,
+            "is_balloon_popped": is_popped,
+            "balloon_size_percent": 20 + ((self._balloon_size - 1.0) / 9.0) * 180  # 20-200% para frontend
+        }
+    
     def _update_score(self, processed_data: Dict[str, Any]) -> None:
         """
         Atualiza score baseado nos dados processados
@@ -229,16 +282,23 @@ class BalloonGame(BaseGame):
             processed_data: Dados processados do jogo
         """
         if processed_data["blow_detected"]:
-            # Score baseado na altura alcançada
-            height_score = int(processed_data["clown_height"] / 10)
+            # Score baseado na intensidade do sopro
+            blow_score = int(processed_data["blow_intensity"] * 10)
             
-            # Bonus por manter pressão constante
+            # Bonus por pressão do balão
             pressure_bonus = int(self._balloon_pressure / 5)
             
             # Bonus por não estourar o balão
-            no_burst_bonus = 10 if not processed_data["is_balloon_full"] else 0
+            no_burst_bonus = 10 if not processed_data.get("is_balloon_popped", False) else 0
             
-            self._score += height_score + pressure_bonus + no_burst_bonus
+            self._score += blow_score + pressure_bonus + no_burst_bonus
+        
+        # Bonus por completar objetivo (balão cheio mas não estourou) - apenas uma vez
+        if processed_data.get("is_balloon_full") and not processed_data.get("is_balloon_popped", False):
+            if not hasattr(self, '_full_bonus_applied'):
+                self._score += 150
+                self._full_bonus_applied = True
+                self._logger.info("Bonus de 150 pontos aplicado por encher o balão!")
     
     def _on_game_start(self) -> None:
         """Hook chamado quando o jogo inicia"""

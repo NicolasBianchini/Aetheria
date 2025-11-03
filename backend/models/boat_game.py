@@ -103,13 +103,14 @@ class BoatGame(BaseGame):
             Movimento do barco
         """
         # Movimento baseado na intensidade do áudio - muito responsivo
-        base_movement = blow_intensity * self._max_speed * 5.0  # Multiplicado por 5 para movimento mais visível
+        # Aumentado multiplicador para movimento mais visível mesmo com valores menores
+        base_movement = blow_intensity * self._max_speed * 8.0  # Multiplicado por 8 para movimento mais visível
         
         # Bonus por sopros consecutivos
-        consecutive_bonus = min(self._consecutive_blows * 0.5, 2.0)  # Bonus maior
+        consecutive_bonus = min(self._consecutive_blows * 0.3, 1.5)  # Bonus moderado
         
         # Ajustar pela dificuldade
-        difficulty_multiplier = {"Fácil": 2.0, "Médio": 1.5, "Difícil": 1.0}[self._difficulty]  # Multiplicadores maiores
+        difficulty_multiplier = {"Fácil": 2.5, "Médio": 2.0, "Difícil": 1.5}[self._difficulty]  # Multiplicadores maiores
         
         total_movement = (base_movement + consecutive_bonus) * difficulty_multiplier
         
@@ -152,6 +153,44 @@ class BoatGame(BaseGame):
         # Limitar histórico
         if len(self._blow_history) > 100:
             self._blow_history.pop(0)
+    
+    def _process_intensity(self, intensity: float, blow_detected: bool) -> Dict[str, Any]:
+        """
+        Processa intensidade de áudio diretamente (sem áudio real)
+        Usa dados reais do microfone do frontend
+        
+        Args:
+            intensity: Intensidade do áudio (0-1) do frontend
+            blow_detected: Se um sopro foi detectado
+            
+        Returns:
+            Dict com dados processados do jogo
+        """
+        # FILTRO: Só mover o barco se um sopro foi detectado
+        # Se o backend detectou sopro, move o barco (frontend já fez filtragem básica)
+        if blow_detected:
+            # Calcular movimento baseado na intensidade REAL do microfone
+            # Usar intensidade diretamente (frontend já fez a filtragem)
+            boat_movement = self._calculate_boat_movement(intensity)
+            self._update_boat_position(boat_movement)
+            
+            # Registrar sopro no histórico
+            self._record_blow(intensity)
+        else:
+            # Se não detectou sopro, resetar sopros consecutivos
+            self._consecutive_blows = 0
+        
+        # Aplicar resistência da água (barco desacelera naturalmente)
+        self._apply_water_resistance()
+        
+        return {
+            "blow_detected": bool(blow_detected),
+            "blow_intensity": float(intensity),
+            "boat_position": float(self._boat_position),
+            "boat_speed": float(self._boat_speed),
+            "consecutive_blows": int(self._consecutive_blows),
+            "game_progress": float(self._boat_position / 100.0)
+        }
     
     def _update_score(self, processed_data: Dict[str, Any]) -> None:
         """

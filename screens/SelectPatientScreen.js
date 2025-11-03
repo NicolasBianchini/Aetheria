@@ -59,6 +59,8 @@ export default function SelectPatientScreen({ navigation, route }) {
   const handleSelectPatient = (patient) => {
     if (game.id === 'barquinho') {
       navigation.navigate('BoatGame', { patient });
+    } else if (game.id === 'balao' || game.id === 'balão' || game.title === 'Balão do Palhaço') {
+      navigation.navigate('BalloonGame', { patient });
     } else {
       Alert.alert(
         game.title,

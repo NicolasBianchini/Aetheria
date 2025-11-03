@@ -12,6 +12,7 @@ import {
 import { ArrowLeft, Wind, Mic, MicOff } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import FirestoreService from '../services/FirestoreService';
+import BackendGameService from '../services/BackendGameService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -25,14 +26,18 @@ export default function BoatGameScreen({ navigation, route }) {
     const [isRecording, setIsRecording] = useState(false);
     const [hasPermission, setHasPermission] = useState(false);
     const [blowIntensity, setBlowIntensity] = useState(0);
-    const [blowThreshold, setBlowThreshold] = useState(0.15);
+    const [blowThreshold, setBlowThreshold] = useState(0.3); // Aumentado para filtrar ruído externo
     const [isBlowingButton, setIsBlowingButton] = useState(false);
 
     const boatAnimation = new Animated.Value(0);
+    const boatPositionAnim = useRef(new Animated.Value(0)).current; // Animação para posição do barco
     const recordingRef = useRef(null);
     const audioHistory = useRef([]);
     const blowCooldown = useRef(0);
     const blowInterval = useRef(null);
+    const currentBoatPosition = useRef(0); // Rastrear posição atual para animação fluida
+    const backgroundNoiseLevel = useRef([]); // Para calibração de ruído ambiente
+    const noiseThreshold = useRef(null); // Threshold dinâmico baseado no ruído
 
     // Função para detectar padrões de sopro
     const detectBlowPattern = (audioLevel) => {
@@ -77,7 +82,7 @@ export default function BoatGameScreen({ navigation, route }) {
         };
     };
 
-    // Função para detectar sopro REAL através do microfone
+    // Função para detectar sopro usando BACKEND PYTHON
     const startRealBlowDetection = async () => {
         if (isBlowingButton) return;
         
@@ -89,6 +94,10 @@ export default function BoatGameScreen({ navigation, route }) {
         try {
             setIsBlowingButton(true);
             setIsRecording(true);
+            
+            // Criar jogo no backend Python
+            const gameInfo = await BackendGameService.createGame('boat', patient?.name || 'Jogador');
+            await BackendGameService.startGame(gameInfo.game_id);
             
             if (!gameStarted) {
                 setGameStarted(true);
@@ -122,77 +131,177 @@ export default function BoatGameScreen({ navigation, route }) {
                     mimeType: 'audio/webm',
                     bitsPerSecond: 128000,
                 },
+                // ATIVAR METERING PARA DETECÇÃO REAL DE SOPRO
+                isMeteringEnabled: true,
             });
 
             await recording.startAsync();
             recordingRef.current = recording;
 
-            // Análise de áudio em tempo real usando status da gravação
-            let audioLevels = [];
-            let blowCount = 0;
-            let lastBlowTime = 0;
-            
+            // Enviar áudio para backend Python e receber estado do jogo
             blowInterval.current = setInterval(async () => {
                 try {
-                    if (recordingRef.current) {
+                    // Verificar se o jogo foi criado antes de processar áudio
+                    // Mas permitir processar mesmo se não estiver ativo (processAudio vai iniciar automaticamente)
+                    if (!BackendGameService.currentGameId) {
+                        console.warn('⚠️ Jogo não criado ainda, aguardando...');
+                        return; // Pular apenas se não tiver gameId
+                    }
+                    
+                    if (recordingRef.current && !gameFinished) {
                         const status = await recordingRef.current.getStatusAsync();
                         
-                        if (status.isRecording) {
-                            // Usar dados reais da gravação quando disponíveis
-                            const now = Date.now();
+                        if (status.isRecording && status.metering !== undefined) {
+                            const meteringDB = status.metering;
                             
-                            // Simular análise de amplitude baseada no status da gravação
-                            // Em um app real, você usaria Web Audio API para análise de frequência
-                            const baseLevel = 0.02;
-                            const timeVariation = Math.sin(now / 200) * 0.08;
-                            const randomVariation = (Math.random() - 0.5) * 0.1;
+                            let audioLevel = 0;
                             
-                            // Simular resposta ao som do microfone
-                            // Quanto mais tempo segurando, mais intenso fica
-                            const holdTime = now - (blowCount * 1000);
-                            const intensityBoost = Math.min(holdTime / 10000, 0.3);
-                            
-                            const audioLevel = Math.max(0, baseLevel + timeVariation + randomVariation + intensityBoost);
-                            
-                            // Manter histórico de níveis de áudio
-                            audioLevels.push(audioLevel);
-                            if (audioLevels.length > 15) {
-                                audioLevels.shift();
+                            // CALIBRAÇÃO DINÂMICA: Calcular ruído ambiente médio nos primeiros segundos
+                            if (backgroundNoiseLevel.current.length < 30) {
+                                // Primeiros 30 frames (~1.5 segundos a 50ms) para calibrar ruído ambiente
+                                backgroundNoiseLevel.current.push(meteringDB);
+                                audioLevel = 0; // Zerar durante calibração
+                                if (backgroundNoiseLevel.current.length === 30) {
+                                    // Calcular threshold após calibração usando mediana (mais robusto)
+                                    const sorted = [...backgroundNoiseLevel.current].sort((a, b) => a - b);
+                                    const medianNoise = sorted[15]; // Mediana
+                                    // Calcular desvio padrão simples (diferença entre quartis)
+                                    const q1 = sorted[7]; // 25%
+                                    const q3 = sorted[22]; // 75%
+                                    const iqr = q3 - q1; // Interquartile range
+                                    
+                                    // Threshold dinâmico: calcular baseado no ruído ambiente
+                                    // IMPORTANTE: Se a mediana for muito alta (> -30 dB), ambiente está muito barulhento
+                                    // Usar threshold fixo baseado no ambiente
+                                    let calculatedThreshold;
+                                    
+                                    if (medianNoise > -30) {
+                                        // Ambiente MUITO barulhento (mediana > -30 dB) - usar threshold fixo alto
+                                        calculatedThreshold = -40;
+                                        console.log(`⚠️ Ambiente muito barulhento (mediana: ${medianNoise.toFixed(2)} dB), usando threshold fixo: -40 dB`);
+                                    } else if (medianNoise > -45) {
+                                        // Ambiente barulhento (mediana entre -30 e -45 dB) - usar threshold fixo
+                                        calculatedThreshold = -45;
+                                        console.log(`⚠️ Ambiente barulhento (mediana: ${medianNoise.toFixed(2)} dB), usando threshold fixo: -45 dB`);
+                                    } else {
+                                        // Ambiente normal ou silencioso - usar threshold dinâmico
+                                        calculatedThreshold = medianNoise + 5 + (iqr * 0.1);
+                                        // Limitar entre -60 e -50 dB
+                                        if (calculatedThreshold > -50) {
+                                            calculatedThreshold = -50;
+                                        } else if (calculatedThreshold < -60) {
+                                            calculatedThreshold = -55;
+                                        }
+                                    }
+                                    
+                                    // Garantir que threshold seja sempre negativo e razoável
+                                    if (calculatedThreshold > 0) {
+                                        // Se threshold for positivo, usar valor fixo
+                                        calculatedThreshold = -45;
+                                        console.log(`⚠️ Threshold positivo detectado, usando fallback: -45 dB`);
+                                    } else if (calculatedThreshold > -30) {
+                                        // Se threshold estiver muito alto (> -30 dB), limitar
+                                        calculatedThreshold = -40;
+                                        console.log(`⚠️ Threshold muito alto (${calculatedThreshold.toFixed(2)} dB), limitando para: -40 dB`);
+                                    }
+                                    
+                                    noiseThreshold.current = calculatedThreshold;
+                                    console.log(`🎯 Calibração concluída - Mediana: ${medianNoise.toFixed(2)} dB, IQR: ${iqr.toFixed(2)} dB, Threshold: ${noiseThreshold.current.toFixed(2)} dB`);
+                                }
+                            } else {
+                                // Usar threshold dinâmico calculado (FIXO após calibração)
+                                if (noiseThreshold.current === null) {
+                                    // Fallback se não calibrou - usar threshold conservador
+                                    noiseThreshold.current = -55;
+                                    console.log(`⚠️ Calibração não concluída, usando threshold padrão: -55 dB`);
+                                }
+                                
+                                // FILTRO: Só processar se estiver significativamente acima do threshold
+                                // Adicionar margem de segurança para filtrar ruído próximo ao threshold
+                                const safetyMargin = 3; // dB de margem de segurança acima do threshold
+                                const effectiveThreshold = noiseThreshold.current + safetyMargin;
+                                
+                                if (meteringDB < effectiveThreshold) {
+                                    audioLevel = 0; // Ruído ambiente ou muito próximo do threshold, ignorar
+                                } else {
+                                    // Calcular nível normalizado acima do threshold efetivo
+                                    const minDB = effectiveThreshold;
+                                    const maxDB = -10; // Sopro direto no microfone (muito forte)
+                                    audioLevel = (meteringDB - minDB) / (maxDB - minDB);
+                                    audioLevel = Math.max(0, Math.min(1, audioLevel));
+                                    
+                                    // Aplicar curva de potência moderada para reduzir ruído residual
+                                    audioLevel = Math.pow(audioLevel, 2.0);
+                                    
+                                    // Filtro adicional: só considerar se for significativo (>= 15%)
+                                    // Aumentado de 10% para 15% para filtrar melhor ruído externo
+                                    if (audioLevel < 0.15) {
+                                        audioLevel = 0; // Muito baixo, ignorar
+                                    }
+                                }
+                                
+                                // Debug: log quando detectar algo
+                                if (audioLevel > 0) {
+                                    console.log(`🎤 Sopro detectado: ${meteringDB.toFixed(2)} dB → ${(audioLevel * 100).toFixed(1)}% (Threshold efetivo: ${effectiveThreshold.toFixed(2)} dB)`);
+                                }
                             }
                             
-                            // Calcular média móvel para suavizar
-                            const avgLevel = audioLevels.reduce((sum, level) => sum + level, 0) / audioLevels.length;
-                            
-                            // Detectar picos de áudio (característicos de sopro)
-                            const recentLevels = audioLevels.slice(-3);
-                            const maxRecent = Math.max(...recentLevels);
-                            const hasPeak = maxRecent > avgLevel * 1.2;
-                            
-                            // Detectar sopro baseado em padrões e tempo
-                            const timeSinceLastBlow = now - lastBlowTime;
-                            const isBlow = audioLevel > blowThreshold && hasPeak && timeSinceLastBlow > 500;
-                            
-                            setBlowIntensity(audioLevel);
-                            
-                            if (isBlow) {
-                                lastBlowTime = now;
-                                blowCount++;
-                                handleBlowDetected();
+                            // ENVIAR PARA BACKEND PYTHON - backend processa e retorna estado do jogo
+                            let gameState = null;
+                            try {
+                                gameState = await BackendGameService.processAudio(audioLevel, meteringDB);
+                                
+                                if (!gameState) {
+                                    console.warn('⚠️ gameState é null, pulando atualização');
+                                    return;
+                                }
+                                
+                                // BACKEND CONTROLA: posição do barco, pontuação, velocidade, etc.
+                                const boatPositionPercent = gameState.boat_position || 0;
+                                const newPosition = (boatPositionPercent / 100) * (width - 100);
+                                
+                                // Debug: log para verificar valores
+                                console.log(`🚤 Barco: ${boatPositionPercent.toFixed(2)}% → ${newPosition.toFixed(0)}px | Intensidade: ${audioLevel.toFixed(2)} | Sopro detectado: ${gameState.blow_detected}`);
+                                
+                                // Atualizar posição do barco baseado no backend
+                                currentBoatPosition.current = newPosition;
+                                Animated.timing(boatPositionAnim, {
+                                    toValue: currentBoatPosition.current,
+                                    duration: 50,
+                                    useNativeDriver: true,
+                                }).start();
+                                
+                                setBoatPosition(Math.floor(currentBoatPosition.current));
+                                setBlowIntensity(gameState.blow_intensity || 0);
+                                setScore(gameState.score || 0); // Score vem direto do backend
+                                
+                                // Verificar vitória (backend retorna game_progress)
+                                if (gameState.game_progress >= 1.0) {
+                                    setGameFinished(true);
+                                    await BackendGameService.endGame();
+                                    saveGameResult();
+                                }
+                                
+                                setIsBlowing(gameState.blow_detected || false);
+                            } catch (error) {
+                                console.error('Erro ao processar áudio no backend:', error);
+                                // Não fazer nada, apenas pular este ciclo
+                                return;
                             }
                         }
                     }
                 } catch (error) {
-                    console.error('Erro na análise de áudio:', error);
+                    console.error('Erro ao processar áudio no backend:', error);
                 }
-            }, 100); // Análise a cada 100ms para melhor performance
+            }, 50); // Enviar para backend a cada 50ms
 
         } catch (error) {
-            console.error('Erro ao iniciar detecção de sopro:', error);
+            console.error('Erro ao iniciar jogo no backend:', error);
             setIsBlowingButton(false);
             setIsRecording(false);
             Alert.alert(
-                'Erro de Gravação',
-                'Não foi possível iniciar a detecção de sopro.',
+                'Erro',
+                'Não foi possível conectar ao backend. Verifique se o servidor está rodando.',
                 [{ text: 'OK' }]
             );
         }
@@ -208,6 +317,14 @@ export default function BoatGameScreen({ navigation, route }) {
         if (blowInterval.current) {
             clearInterval(blowInterval.current);
             blowInterval.current = null;
+        }
+        
+        // Finalizar jogo no backend Python
+        try {
+            await BackendGameService.endGame();
+            BackendGameService.reset();
+        } catch (error) {
+            console.error('Erro ao finalizar jogo no backend:', error);
         }
         
         if (recordingRef.current) {
@@ -315,6 +432,8 @@ export default function BoatGameScreen({ navigation, route }) {
                     mimeType: 'audio/webm',
                     bitsPerSecond: 128000,
                 },
+                // ATIVAR METERING PARA DETECÇÃO REAL DE SOPRO
+                isMeteringEnabled: true,
             });
 
             await recording.startAsync();
@@ -327,12 +446,17 @@ export default function BoatGameScreen({ navigation, route }) {
                         // Obter status da gravação para análise
                         const status = await recordingRef.current.getStatusAsync();
                         
-                        if (status.isRecording) {
-                            // Simular análise de amplitude do áudio mais realista
-                            // Em um app real, você usaria Web Audio API para análise de frequência
-                            const baseNoise = Math.random() * 0.05; // Ruído de fundo
-                            const userBlow = Math.random() * 0.4; // Simular sopro do usuário
-                            const audioLevel = baseNoise + userBlow;
+                        if (status.isRecording && status.metering !== undefined) {
+                            // USAR DADOS REAIS DO MICROFONE através do metering
+                            const meteringDB = status.metering;
+                            
+                            // Converter dB para escala linear 0-1
+                            const minDB = -60;
+                            const maxDB = -10;
+                            let audioLevel = (meteringDB - minDB) / (maxDB - minDB);
+                            audioLevel = Math.max(0, Math.min(1, audioLevel));
+                            
+                            console.log(`🎤 Metering: ${meteringDB.toFixed(2)} dB → Nível: ${(audioLevel * 100).toFixed(1)}%`);
                             
                             // Detectar sopro baseado em padrões de frequência e amplitude
                             const blowPattern = detectBlowPattern(audioLevel);
@@ -340,6 +464,7 @@ export default function BoatGameScreen({ navigation, route }) {
                             
                             if (blowPattern.isBlow) {
                                 handleBlowDetected();
+                                console.log('💨 Sopro detectado!');
                             }
                         }
                     }
@@ -436,6 +561,9 @@ export default function BoatGameScreen({ navigation, route }) {
     };
 
     const resetGame = () => {
+        // Resetar frontend
+        currentBoatPosition.current = 0;
+        boatPositionAnim.setValue(0);
         setBoatPosition(0);
         setGameStarted(false);
         setGameFinished(false);
@@ -443,6 +571,13 @@ export default function BoatGameScreen({ navigation, route }) {
         setIsBlowing(false);
         setIsRecording(false);
         setBlowIntensity(0);
+        
+        // Resetar calibração de ruído
+        backgroundNoiseLevel.current = [];
+        noiseThreshold.current = null;
+        
+        // Resetar backend
+        BackendGameService.reset();
     };
 
     const floatingTransform = boatAnimation.interpolate({
@@ -490,8 +625,11 @@ export default function BoatGameScreen({ navigation, route }) {
                         style={[
                             styles.sailboat,
                             {
-                                left: boatPosition,
-                                transform: [{ translateY: floatingTransform }]
+                                left: 0, // Posição base fixa
+                                transform: [
+                                    { translateX: boatPositionAnim }, // Movimento horizontal fluido
+                                    { translateY: floatingTransform } // Movimento vertical (flutuação)
+                                ]
                             }
                         ]}
                     >
@@ -569,22 +707,22 @@ export default function BoatGameScreen({ navigation, route }) {
                 <Text style={styles.sensitivityLabel}>Sensibilidade:</Text>
                 <View style={styles.sensitivityButtons}>
                     <TouchableOpacity
-                        style={[styles.sensitivityButton, blowThreshold === 0.1 && styles.sensitivityButtonActive]}
-                        onPress={() => setBlowThreshold(0.1)}
+                        style={[styles.sensitivityButton, blowThreshold === 0.2 && styles.sensitivityButtonActive]}
+                        onPress={() => setBlowThreshold(0.2)}
                     >
-                        <Text style={styles.sensitivityButtonText}>Alta</Text>
+                        <Text style={[styles.sensitivityButtonText, blowThreshold === 0.2 && styles.sensitivityButtonTextActive]}>Alta</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.sensitivityButton, blowThreshold === 0.15 && styles.sensitivityButtonActive]}
-                        onPress={() => setBlowThreshold(0.15)}
+                        style={[styles.sensitivityButton, blowThreshold === 0.3 && styles.sensitivityButtonActive]}
+                        onPress={() => setBlowThreshold(0.3)}
                     >
-                        <Text style={styles.sensitivityButtonText}>Média</Text>
+                        <Text style={[styles.sensitivityButtonText, blowThreshold === 0.3 && styles.sensitivityButtonTextActive]}>Média</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.sensitivityButton, blowThreshold === 0.25 && styles.sensitivityButtonActive]}
-                        onPress={() => setBlowThreshold(0.25)}
+                        style={[styles.sensitivityButton, blowThreshold === 0.4 && styles.sensitivityButtonActive]}
+                        onPress={() => setBlowThreshold(0.4)}
                     >
-                        <Text style={styles.sensitivityButtonText}>Baixa</Text>
+                        <Text style={[styles.sensitivityButtonText, blowThreshold === 0.4 && styles.sensitivityButtonTextActive]}>Baixa</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -936,5 +1074,8 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#64748B',
         fontWeight: '500',
+    },
+    sensitivityButtonTextActive: {
+        color: '#fff',
     },
 });
